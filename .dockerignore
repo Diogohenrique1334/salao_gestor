@@ -1,0 +1,28 @@
+# Segredos e ambiente — NUNCA na imagem
+.streamlit/secrets.toml
+.env
+*.env
+
+# Controle de versao e CI
+.git
+.github
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Artefatos de dev
+telas/
+scripts/capturar_telas.py
+assets/*.jfif
+assets/identidade.png
+
+# SO / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

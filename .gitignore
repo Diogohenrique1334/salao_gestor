@@ -1,0 +1,52 @@
+# ===========================================================================
+# .gitignore - o que NUNCA entra no repositorio
+# (comentarios so em linha propria: o git nao aceita # no fim do padrao)
+# ===========================================================================
+
+# --- Segredos (CRITICO: nunca commitar) ---
+# credenciais reais: Neon, SMTP, session_secret
+.streamlit/secrets.toml
+.env
+*.env
+*.pem
+*.key
+# NOTA: .streamlit/config.toml (tema) DEVE ser versionado e nao esta aqui.
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- Coisas que nao precisam ir para o repositorio ---
+# instrucoes internas de dev (nao e' do produto)
+CLAUDE.md
+# screenshots gerados pelo script de captura
+telas/
+*.log
+
+# --- Marca ---
+# o app usa assets/logo.png e assets/logo_256.png -> esses VAO.
+# o .jfif cru e o identidade.png intermediario nao sao usados em runtime.
+assets/*.jfif
+assets/identidade.png
+
+# --- Banco local (se algum dia usar sqlite em teste) ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+
+# --- Sistema operacional ---
+.DS_Store
+Thumbs.db
+desktop.ini

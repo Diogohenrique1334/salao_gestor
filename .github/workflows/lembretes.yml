@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# .github/workflows/lembretes.yml — cron GRATUITO de lembretes (1x/dia).
+#
+# Roda o job idempotente que avisa os clientes 1 dia antes. Configure os
+# segredos do repositorio (Settings > Secrets and variables > Actions):
+#   DATABASE_URL, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_REMETENTE,
+#   WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TEMPLATE_LEMBRETE, ...
+# (settings.py le tudo de env vars; nao precisa de secrets.toml aqui.)
+# ---------------------------------------------------------------------------
+name: lembretes-diarios
+
+on:
+  schedule:
+    - cron: "0 12 * * *"   # 12:00 UTC = 09:00 BRT (ajuste conforme o salao)
+  workflow_dispatch: {}     # permite rodar manualmente
+
+jobs:
+  enviar-lembretes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Disparar lembretes (amanha)
+        env:
+          # runner roda em UTC; o job monta a janela do dia com datetime local
+          # (mesma convencao de agendamento.inicio) -> fixa o fuso do salao.
+          TZ: America/Sao_Paulo
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SALAO_NOME: ${{ vars.SALAO_NOME }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_REMETENTE: ${{ secrets.SMTP_REMETENTE }}
+          WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_TEMPLATE_LEMBRETE: ${{ secrets.WHATSAPP_TEMPLATE_LEMBRETE }}
+        run: python -m src.jobs.lembretes --dias 1

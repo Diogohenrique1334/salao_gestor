@@ -1,0 +1,16 @@
+# ---------------------------------------------------------------------------
+# requirements.txt — dependencias do app de agendamento do salao
+# Local e deploy: `pip install -r requirements.txt` (sem dependencias externas
+# fora do PyPI; os graficos sao self-contained em ui/componentes/graficos.py).
+# ---------------------------------------------------------------------------
+streamlit>=1.33
+starlette>=1.4.1          # transitiva do streamlit >=1.58; a 1.4.0 quebra o
+                          # GZip middleware em toda requisicao (1.4.1 corrigiu)
+SQLAlchemy>=1.4           # codigo escrito p/ rodar em 1.4 (local) e 2.0 (deploy)
+psycopg2-binary>=2.9      # driver Postgres (Neon)
+alembic>=1.13             # migrations versionadas
+bcrypt>=4.0               # hash de senha
+extra-streamlit-components>=0.1.71  # cookie manager (login persistente)
+streamlit-echarts>=0.4    # backend dos graficos ECharts do dashboard
+requests>=2.31            # Meta WhatsApp Cloud API
+pandas>=1.5               # dashboard / dados p/ graficos

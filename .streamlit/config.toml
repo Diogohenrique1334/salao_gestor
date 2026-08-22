@@ -1,0 +1,21 @@
+# ---------------------------------------------------------------------------
+# config.toml — tema DARK fixo do app (nao depende do toggle do usuario).
+#
+# Paleta = identidade da Barbearia Recortes (extraida de assets/logo.png):
+#   amarelo #F7DF01 · preto · branco
+# O amarelo e' muito claro: texto sobre superficie amarela vai PRETO. O CSS de
+# ui/componentes/styles.py sobrescreve o botao primario do Streamlit por isso.
+# ---------------------------------------------------------------------------
+[theme]
+base = "dark"
+primaryColor = "#F7DF01"
+backgroundColor = "#0d0d0f"
+secondaryBackgroundColor = "#17171a"
+textColor = "#f0f0f0"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
