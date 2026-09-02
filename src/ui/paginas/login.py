@@ -3,16 +3,18 @@
 #
 # Coleta e-mail/senha, autentica via servicos.auth e abre a sessao (guards).
 # "Lembrar de mim" grava o cookie assinado p/ login persistente.
+#
+# `formulario_login()` e' o corpo reutilizavel (sem cabecalho de marca): a tela
+# de entrada unica (paginas/entrada.py) o compoe ao lado do cadastro.
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
 import streamlit as st
 
-from src.config.settings import get_settings
 from src.db.engine import sessao
 from src.notificacoes import eventos
 from src.servicos import auth
-from src.ui.componentes import guards, styles
+from src.ui.componentes import guards
 
 _MIN_SENHA = 6
 
@@ -56,12 +58,8 @@ def _esqueci_senha() -> None:
                         st.error("Codigo invalido ou expirado.")
 
 
-def render() -> None:
-    styles.aplicar_estilo_base()
-    # nome vem de settings (SALAO_NOME / [salao].nome) - nao hardcode a marca
-    styles.cabecalho_marca(get_settings().salao.nome, "Agendamentos")
-    styles.titulo_secao("Entrar")
-
+def formulario_login() -> None:
+    """Corpo da tela de login (sem cabecalho de marca). Reutilizado por entrada.py."""
     with st.form("form_login"):
         email = st.text_input("E-mail", placeholder="voce@email.com")
         senha = st.text_input("Senha", type="password")
@@ -82,4 +80,3 @@ def render() -> None:
         st.rerun()
 
     _esqueci_senha()
-    st.caption("Ainda nao tem conta? Use a pagina **Cadastro** no menu lateral.")

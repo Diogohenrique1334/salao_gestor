@@ -21,13 +21,13 @@ from src.ui.paginas import (
     agendar,
     cabeleireiro_atendimento,
     cabeleireiro_painel,
-    cadastro,
+    entrada,
     gestor_atendimento,
     gestor_cabeleireiros,
     gestor_clientes,
     gestor_dashboard,
+    gestor_ocupacao,
     gestor_servicos,
-    login,
     meus_agendamentos,
 )
 
@@ -43,10 +43,8 @@ st.set_page_config(
 
 
 def _menu_deslogado():
-    return [
-        st.Page(login.render, title="Login", icon="🔑", url_path="login", default=True),
-        st.Page(cadastro.render, title="Cadastro", icon="📝", url_path="cadastro"),
-    ]
+    # uma unica pagina (Entrar/Criar conta no proprio corpo) — sem menu lateral
+    return [st.Page(entrada.render, title="Entrar", icon="🔑", url_path="entrar", default=True)]
 
 
 def _menu_cliente():
@@ -71,6 +69,7 @@ def _menu_gestor():
     return {
         "Gestao": [
             st.Page(gestor_dashboard.render, title="Dashboard", icon="📊", url_path="dashboard", default=True),
+            st.Page(gestor_ocupacao.render, title="Ocupacao", icon="📅", url_path="ocupacao"),
             st.Page(gestor_atendimento.render, title="Atendimento avulso", icon="🧍", url_path="atendimento"),
             st.Page(gestor_cabeleireiros.render, title="Cabeleireiros", icon="✂️", url_path="cabeleireiros"),
             st.Page(gestor_servicos.render, title="Servicos", icon="🧾", url_path="servicos"),
@@ -111,18 +110,20 @@ def main() -> None:
     usuario = guards.usuario_atual()
 
     if usuario is None:
-        paginas = _menu_deslogado()
+        # tela unica: esconde o menu lateral (nao ha o que navegar deslogado)
+        st.navigation(_menu_deslogado(), position="hidden").run()
+        return
+
+    _sidebar_usuario(usuario)
+    papel = usuario.get("papel")
+    if papel == PAPEL_GESTOR:
+        if get_settings().session_secret_inseguro:
+            _avisar_segredo_inseguro()
+        paginas = _menu_gestor()
+    elif papel == PAPEL_CABELEIREIRO:
+        paginas = _menu_cabeleireiro()
     else:
-        _sidebar_usuario(usuario)
-        papel = usuario.get("papel")
-        if papel == PAPEL_GESTOR:
-            if get_settings().session_secret_inseguro:
-                _avisar_segredo_inseguro()
-            paginas = _menu_gestor()
-        elif papel == PAPEL_CABELEIREIRO:
-            paginas = _menu_cabeleireiro()
-        else:
-            paginas = _menu_cliente()
+        paginas = _menu_cliente()
 
     st.navigation(paginas).run()
 

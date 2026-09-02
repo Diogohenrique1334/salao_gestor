@@ -18,15 +18,43 @@ from src.servicos import agenda, precificacao, reservas
 from src.ui.componentes import guards, styles
 
 
+_CHAVE_CONFIRMADO = "agendamento_confirmado"
+
+
 def _aviso_telefone(usuario: dict) -> None:
     if not usuario.get("telefone"):
         st.caption("ℹ️ Voce ainda nao cadastrou WhatsApp, a confirmacao por WhatsApp "
                    "depende disso (atualize em 'Meus agendamentos' futuramente).")
 
 
+def _tela_confirmacao(dados: dict) -> None:
+    """Tela dedicada de sucesso — substitui o balao/toast por uma mudanca de tela."""
+    st.markdown("## ✅ Agendamento confirmado!")
+    st.markdown('<div class="bloco-card">', unsafe_allow_html=True)
+    st.markdown(
+        f"### {dados['servico']}\n"
+        f"**Profissional:** {dados['prof']}  \n"
+        f"**Quando:** {dados['inicio'].strftime('%d/%m/%Y às %H:%M')}  \n"
+        f"**Valor:** {styles.moeda_br(dados['preco'])}",
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+    if dados.get("canais"):
+        st.caption(f"Enviamos a confirmacao por: {', '.join(dados['canais'])}.")
+    st.info("Você pode ver, remarcar ou cancelar em **Meus agendamentos** (no menu ao lado).")
+    if st.button("Agendar outro horário", type="primary", use_container_width=True):
+        del st.session_state[_CHAVE_CONFIRMADO]
+        st.rerun()
+
+
 def render() -> None:
     styles.aplicar_estilo_base()
     usuario = guards.require_login()
+
+    # se acabou de confirmar, mostra a tela de sucesso e PARA aqui
+    if _CHAVE_CONFIRMADO in st.session_state:
+        _tela_confirmacao(st.session_state[_CHAVE_CONFIRMADO])
+        return
+
     st.markdown("## 🗓️ Agendar")
     _aviso_telefone(usuario)
 
@@ -103,10 +131,12 @@ def render() -> None:
                 )
                 canais = eventos.enviar_confirmacao(db, ag)
                 repo_ag.marcar_canal_confirmacao(db, ag.id, ",".join(canais))
-                ag_id = ag.id
-            st.success(f"Agendamento confirmado! (#{ag_id}) — {resumo}")
-            st.caption(f"Confirmacao enviada por: {', '.join(canais)}.")
-            st.balloons()
+            # guarda os dados e troca para a tela de confirmacao (sem balao)
+            st.session_state[_CHAVE_CONFIRMADO] = {
+                "servico": servico.nome, "prof": prof.nome,
+                "inicio": slot, "preco": calc.preco_final, "canais": canais,
+            }
+            st.rerun()
         except reservas.SlotIndisponivel:
             st.error("Ops, esse horario acabou de ser ocupado. Escolha outro.")
         except reservas.HorarioBloqueado:

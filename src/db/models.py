@@ -67,6 +67,11 @@ class Cabeleireiro(Base):
     telefone = Column(String(20), nullable=True)
     bio = Column(Text, nullable=True)
     ativo = Column(Boolean, nullable=False, default=True)
+    # Almoco RECORRENTE (hora local): vale para TODO dia de trabalho, sem
+    # precisar bloquear dia a dia. Entra como intervalo "ocupado" no calculo de
+    # slots (ver servicos/agenda.py). None/None = sem almoco definido.
+    almoco_inicio = Column(Time, nullable=True)
+    almoco_fim = Column(Time, nullable=True)
     criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     servicos = relationship(

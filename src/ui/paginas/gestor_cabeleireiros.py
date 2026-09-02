@@ -98,6 +98,40 @@ def _gerir_horarios(prof) -> None:
                     repo_cab.adicionar_horario(db, prof.id, dia_semana=int(dia), hora_inicio=ini, hora_fim=fim)
                 st.rerun()
 
+    _gerir_almoco(prof)
+
+
+def _gerir_almoco(prof) -> None:
+    """Almoco recorrente: um intervalo que vale TODO dia de trabalho (nao dia a dia)."""
+    st.markdown("**Horario de almoco**")
+    tem = bool(prof.almoco_inicio and prof.almoco_fim)
+    if tem:
+        st.caption(f"Almoco atual: {prof.almoco_inicio.strftime('%H:%M')} – "
+                   f"{prof.almoco_fim.strftime('%H:%M')} (todos os dias). A agenda ja bloqueia esse horario.")
+    else:
+        st.caption("Sem almoco definido. Ao definir, a agenda trava esse horario em todos os dias.")
+
+    with st.form(f"almoco_{prof.id}"):
+        c1, c2, c3 = st.columns([1, 1, 1.4])
+        ini = c1.time_input("Inicio", value=prof.almoco_inicio or time(12, 0), key=f"ai_{prof.id}")
+        fim = c2.time_input("Fim", value=prof.almoco_fim or time(13, 0), key=f"af_{prof.id}")
+        c3.markdown("&nbsp;")
+        salvar = c3.form_submit_button("Salvar almoco", type="primary")
+        remover = c3.form_submit_button("Sem almoco") if tem else False
+    if salvar:
+        if ini >= fim:
+            st.error("Inicio deve ser antes do fim.")
+        else:
+            with sessao() as db:
+                repo_cab.definir_almoco(db, prof.id, inicio=ini, fim=fim)
+            st.success("Horario de almoco salvo.")
+            st.rerun()
+    if remover:
+        with sessao() as db:
+            repo_cab.definir_almoco(db, prof.id, inicio=None, fim=None)
+        st.success("Almoco removido.")
+        st.rerun()
+
 
 def _gerir_bloqueios(prof) -> None:
     st.markdown("**Bloqueios de agenda (ferias/folga)**")

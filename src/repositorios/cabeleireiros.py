@@ -59,6 +59,21 @@ def atualizar(
     return prof
 
 
+def definir_almoco(
+    db: Session, cabeleireiro_id: int, *, inicio: Optional[time], fim: Optional[time]
+) -> None:
+    """Define (ou limpa) o almoco recorrente. Passe inicio=fim=None p/ remover.
+
+    Funcao dedicada porque None e' um valor VALIDO (sem almoco) — o `atualizar`
+    generico usa o padrao "None = nao mexe", que aqui nao daria p/ limpar.
+    """
+    prof = db.get(Cabeleireiro, cabeleireiro_id)
+    if prof:
+        prof.almoco_inicio = inicio
+        prof.almoco_fim = fim
+        db.flush()
+
+
 def remover(db: Session, cabeleireiro_id: int) -> None:
     """Soft-delete: desativa o cabeleireiro (preserva agendamentos antigos)."""
     prof = db.get(Cabeleireiro, cabeleireiro_id)

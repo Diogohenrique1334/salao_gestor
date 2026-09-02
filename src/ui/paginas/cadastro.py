@@ -3,6 +3,9 @@
 #
 # Coleta nome, e-mail, telefone (opcional, usado p/ WhatsApp) e senha; valida
 # e cria o usuario via servicos.auth. Em sucesso, ja faz login automatico.
+#
+# `formulario_cadastro()` e' o corpo reutilizavel (sem cabecalho de marca): a
+# tela de entrada unica (paginas/entrada.py) o compoe ao lado do login.
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
@@ -11,20 +14,16 @@ from datetime import date
 
 import streamlit as st
 
-from src.config.settings import get_settings
 from src.db.engine import sessao
 from src.servicos import auth
-from src.ui.componentes import guards, styles
+from src.ui.componentes import guards
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _MIN_SENHA = 6
 
 
-def render() -> None:
-    styles.aplicar_estilo_base()
-    styles.cabecalho_marca(get_settings().salao.nome, "Criar conta")
-    styles.titulo_secao("Seus dados")
-
+def formulario_cadastro() -> None:
+    """Corpo do cadastro (sem cabecalho de marca). Reutilizado por entrada.py."""
     with st.form("form_cadastro"):
         nome = st.text_input("Nome completo")
         email = st.text_input("E-mail")
@@ -40,7 +39,6 @@ def render() -> None:
         enviar = st.form_submit_button("Cadastrar", type="primary", use_container_width=True)
 
     if not enviar:
-        st.caption("Ja tem conta? Use a pagina **Login** no menu lateral.")
         return
 
     # Validacoes

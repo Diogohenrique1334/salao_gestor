@@ -26,6 +26,8 @@ env/
 # --- Coisas que nao precisam ir para o repositorio ---
 # instrucoes internas de dev (nao e' do produto)
 CLAUDE.md
+# entregaveis gerados (guias, apresentacoes) - nao sao codigo
+*.pptx
 # screenshots gerados pelo script de captura
 telas/
 *.log
