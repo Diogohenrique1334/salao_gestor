@@ -3,7 +3,10 @@
 # Local e deploy: `pip install -r requirements.txt` (sem dependencias externas
 # fora do PyPI; os graficos sao self-contained em ui/componentes/graficos.py).
 # ---------------------------------------------------------------------------
-streamlit>=1.33
+streamlit==1.50.0        # PINADO: o Cloud instalava a versao mais nova (>=)
+                         # e uma mudanca de API quebrava o app. 1.50.0 e' a
+                         # versao testada localmente. Ao subir de versao,
+                         # testar antes e mover este pin.
 starlette>=1.4.1          # transitiva do streamlit >=1.58; a 1.4.0 quebra o
                           # GZip middleware em toda requisicao (1.4.1 corrigiu)
 SQLAlchemy>=1.4           # codigo escrito p/ rodar em 1.4 (local) e 2.0 (deploy)
