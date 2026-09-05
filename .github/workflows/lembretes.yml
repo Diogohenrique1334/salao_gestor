@@ -33,7 +33,9 @@ jobs:
           # (mesma convencao de agendamento.inicio) -> fixa o fuso do salao.
           TZ: America/Sao_Paulo
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SALAO_NOME: ${{ vars.SALAO_NOME }}
+          # aceita tanto Variable quanto Secret (o nome do salao nao e' segredo,
+          # mas cadastrar em qualquer uma das abas deve funcionar)
+          SALAO_NOME: ${{ vars.SALAO_NOME || secrets.SALAO_NOME }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
