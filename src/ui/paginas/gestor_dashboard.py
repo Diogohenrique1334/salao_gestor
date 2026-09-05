@@ -73,6 +73,11 @@ def render() -> None:
 
     styles.titulo_secao(f"Resumo ultimos {dias} dias")
     _kpis(resumo)
+    if resumo.get("gratuitos"):
+        st.caption(
+            f"O ticket medio considera apenas os {resumo['pagos']} atendimentos pagos — "
+            f"{resumo['gratuitos']} lancados a R$ 0 (plano/cortesia) ficam de fora da media."
+        )
 
     _secao_nps(desde)
 

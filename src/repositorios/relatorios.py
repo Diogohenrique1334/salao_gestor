@@ -66,14 +66,27 @@ def resumo(db: Session, desde: datetime, cabeleireiro_id: Optional[int] = None) 
         ), cabeleireiro_id)
     ).scalar_one()
 
-    faturaveis = db.execute(
+    # DENOMINADOR do ticket medio: so atendimentos PAGOS (preco > 0).
+    # Planos/cortesias lancados a R$ 0 (ex.: servico "Mensal") sao atendimentos
+    # reais e contam em `total`, mas incluí-los aqui derrubaria a media.
+    pagos = db.execute(
         _filtro_cab(select(func.count(Agendamento.id)).where(
-            Agendamento.criado_em >= desde, Agendamento.status.in_(_STATUS_RECEITA)
+            Agendamento.criado_em >= desde,
+            Agendamento.status.in_(_STATUS_RECEITA),
+            Agendamento.preco_aplicado > 0,
+        ), cabeleireiro_id)
+    ).scalar_one()
+
+    gratuitos = db.execute(
+        _filtro_cab(select(func.count(Agendamento.id)).where(
+            Agendamento.criado_em >= desde,
+            Agendamento.status.in_(_STATUS_RECEITA),
+            Agendamento.preco_aplicado <= 0,
         ), cabeleireiro_id)
     ).scalar_one()
 
     receita = Decimal(receita or 0)
-    ticket = (receita / faturaveis) if faturaveis else Decimal(0)
+    ticket = (receita / pagos) if pagos else Decimal(0)
     taxa_cancel = (cancelados / total * 100) if total else 0.0
     # no-show entre os ja resolvidos (compareceu vs faltou); ignora os ainda em aberto
     resolvidos = concluidos + no_shows
@@ -85,6 +98,8 @@ def resumo(db: Session, desde: datetime, cabeleireiro_id: Optional[int] = None) 
         "no_shows": int(no_shows),
         "receita": receita,
         "ticket_medio": ticket,
+        "pagos": int(pagos),
+        "gratuitos": int(gratuitos),
         "taxa_cancelamento": taxa_cancel,
         "taxa_no_show": taxa_no_show,
     }

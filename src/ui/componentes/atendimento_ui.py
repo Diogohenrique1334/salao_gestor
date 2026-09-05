@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 
 import streamlit as st
 
@@ -178,23 +178,35 @@ def _card_agenda(a, *, quem: str, servico_nome: str, pode_dar_baixa: bool,
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def tabela_agenda_do_dia(*, cabeleireiro_fixo=None, key_prefix: str = "ag") -> None:
+def tabela_agenda_do_dia(
+    *, cabeleireiro_fixo=None, dia: Optional[date] = None, key_prefix: str = "ag"
+) -> Optional[Tuple[object, date]]:
     """Agenda MARCADA de um dia, com baixa de presenca (compareceu/faltou).
 
     Gestor (cabeleireiro selecionavel) pode baixar qualquer; cabeleireiro fixo so
     os proprios. Botoes so aparecem para agendamentos ATIVOS de dias ja chegados.
+
+    `dia` vindo de fora (ex.: clique na grade de ocupacao) suprime o seletor de
+    data interno; sem ele, a funcao desenha o proprio `date_input`.
     """
+    dia_externo = dia is not None
     if cabeleireiro_fixo is not None:
         prof = cabeleireiro_fixo
-        dia = st.date_input("Dia", value=date.today(), key=f"{key_prefix}_dia")
+        if not dia_externo:
+            dia = st.date_input("Dia", value=date.today(), key=f"{key_prefix}_dia")
     else:
         with sessao() as db:
             profs = repo_cab.listar(db)
         if not profs:
-            return
-        c1, c2 = st.columns(2)
-        prof = c1.selectbox("Cabeleireiro", profs, format_func=lambda p: p.nome, key=f"{key_prefix}_prof")
-        dia = c2.date_input("Dia", value=date.today(), key=f"{key_prefix}_dia")
+            return None
+        if dia_externo:
+            prof = st.selectbox("Cabeleireiro", profs, format_func=lambda p: p.nome,
+                                key=f"{key_prefix}_prof")
+        else:
+            c1, c2 = st.columns(2)
+            prof = c1.selectbox("Cabeleireiro", profs, format_func=lambda p: p.nome,
+                                key=f"{key_prefix}_prof")
+            dia = c2.date_input("Dia", value=date.today(), key=f"{key_prefix}_dia")
 
     restrito_a = prof.id if cabeleireiro_fixo is not None else None
     pode_dar_baixa = dia <= date.today()  # nao da baixa em agendamento futuro
