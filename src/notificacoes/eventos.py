@@ -165,12 +165,20 @@ def enviar_codigo_reset(*, nome: str, email: str, codigo: str) -> str:
 
 # ----- eventos do PROFISSIONAL ---------------------------------------------
 def enviar_agenda_do_dia(db: Session, cabeleireiro_id: int, dia: Optional[date] = None) -> List[str]:
-    """Resumo matinal da agenda de um profissional (chamado pelo job)."""
+    """Resumo matinal da agenda de um profissional (chamado pelo job).
+
+    AGENDA VAZIA NAO GERA E-MAIL: devolve [] sem enviar. Um aviso diario de
+    "voce nao tem nada hoje" vira ruido e treina o profissional a ignorar a
+    mensagem — inclusive nos dias em que ela importa.
+    """
     dia = dia or date.today()
     inicio = datetime.combine(dia, time.min)
     fim = inicio + timedelta(days=1)
 
     agendamentos = repo_ag.listar_por_cabeleireiro_no_dia(db, cabeleireiro_id, inicio, fim)
+    if not agendamentos:
+        return []
+
     itens = [
         mensagens.ItemAgenda(
             inicio=a.inicio,

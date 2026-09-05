@@ -7,6 +7,8 @@
 #      marca lembrete_enviado_em. Rodar duas vezes nao reenvia (idempotente).
 #   2) RESUMO DA AGENDA DE HOJE a cada profissional ativo — substitui mandar
 #      e-mail a cada novo agendamento (que viraria ruido e seria ignorado).
+#      Profissional SEM atendimento no dia nao recebe nada: um "voce nao tem
+#      nada hoje" diario treina a pessoa a ignorar o e-mail.
 #
 # Nao idempotente na parte (2): rodar duas vezes manda o resumo duas vezes.
 # E' de proposito — nao ha estado a guardar e o custo (e-mail) e' zero.
@@ -63,11 +65,20 @@ def enviar_agendas(dry_run: bool = False) -> int:
     with sessao() as db:
         profissionais = repo_cab.listar(db)
         print(f"[agenda-do-dia] {hoje} | profissionais ativos={len(profissionais)}")
+        dia_ini = datetime.combine(hoje, time.min)
+        dia_fim = dia_ini + timedelta(days=1)
         for prof in profissionais:
+            # agenda vazia nao gera e-mail (ver notificacoes.eventos); no dry-run
+            # consultamos antes para o relatorio refletir o que realmente sairia
             if dry_run:
-                print(f"  [dry-run] resumo p/ {prof.nome} (#{prof.id})")
+                qtd = len(repo_ag.listar_por_cabeleireiro_no_dia(db, prof.id, dia_ini, dia_fim))
+                marca = f"{qtd} atendimento(s)" if qtd else "agenda vazia - NAO envia"
+                print(f"  [dry-run] {prof.nome}: {marca}")
                 continue
             canais = eventos.enviar_agenda_do_dia(db, prof.id, hoje)
+            if not canais:
+                print(f"  {prof.nome}: agenda vazia - nao enviado")
+                continue
             enviados += 1
             print(f"  resumo p/ {prof.nome} via {','.join(canais)}")
     return enviados
