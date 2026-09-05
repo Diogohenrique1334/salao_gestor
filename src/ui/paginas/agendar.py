@@ -40,6 +40,12 @@ def _tela_confirmacao(dados: dict) -> None:
     st.markdown("</div>", unsafe_allow_html=True)
     if dados.get("canais"):
         st.caption(f"Enviamos a confirmacao por: {', '.join(dados['canais'])}.")
+        # Aviso de spam SO quando o e-mail realmente saiu: o Gmail costuma filtrar
+        # a primeira mensagem de um remetente novo. Dito aqui, no momento em que o
+        # cliente vai procurar, evita o "nao recebi" virar suporte para o salao.
+        if "email" in dados["canais"]:
+            st.caption("📩 Não achou o e-mail? Veja a **caixa de spam** e marque como "
+                       "\"não é spam\" — assim os próximos chegam direto.")
     st.info("Você pode ver, remarcar ou cancelar em **Meus agendamentos** (no menu ao lado).")
     if st.button("Agendar outro horário", type="primary", use_container_width=True):
         del st.session_state[_CHAVE_CONFIRMADO]
