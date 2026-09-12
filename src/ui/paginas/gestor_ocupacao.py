@@ -1,9 +1,12 @@
 # ---------------------------------------------------------------------------
 # ui/paginas/gestor_ocupacao.py - visao panoramica de ocupacao (gestor).
 #
-# Grade dos proximos dias (Nº de agendamentos + barra de preenchimento) vinda do
+# Grade de dias (Nº de agendamentos + barra de preenchimento) vinda do
 # componente compartilhado ui/componentes/ocupacao_ui.py. Ao clicar num dia,
 # abre a agenda daquele dia com quem esta marcado em cada horario.
+#
+# A janela olha para FRENTE ou para TRAS (retrospecto: quem esteve marcado),
+# pelos controles de ocupacao_ui.controles_periodo().
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
@@ -19,7 +22,7 @@ _KEY = "gocup"
 def render() -> None:
     styles.aplicar_estilo_base()
     guards.require_gestor()
-    st.markdown("## 📅 Ocupacao dos proximos dias")
+    st.markdown("## 📅 Ocupacao da agenda")
 
     with sessao() as db:
         profs = repo_cab.listar(db)
@@ -31,13 +34,13 @@ def render() -> None:
     opcoes.update({p.nome: p.id for p in profs})
     por_id = {p.id: p for p in profs}
 
-    c1, c2 = st.columns([2, 2])
-    escolha = c1.selectbox("Cabeleireiro", list(opcoes.keys()), key=f"{_KEY}_cab")
-    dias = c2.segmented_control("Periodo", [7, 14, 30], default=14,
-                                format_func=lambda n: f"{n} dias", key=f"{_KEY}_per") or 14
+    escolha = st.selectbox("Cabeleireiro", list(opcoes.keys()), key=f"{_KEY}_cab")
     cab_id = opcoes[escolha]
 
-    dia_sel = ocupacao_ui.grade_ocupacao(cabeleireiro_id=cab_id, dias=int(dias), key_prefix=_KEY)
+    dias, inicio = ocupacao_ui.controles_periodo(_KEY, default_dias=14)
+    dia_sel = ocupacao_ui.grade_ocupacao(
+        cabeleireiro_id=cab_id, dias=dias, inicio=inicio, key_prefix=_KEY
+    )
 
     if dia_sel is None:
         return

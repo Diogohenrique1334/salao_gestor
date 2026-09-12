@@ -28,6 +28,17 @@ STATUS_AGENDAMENTO = (
 # Status que ocupam o slot na agenda (impedem novo agendamento no mesmo horario)
 STATUS_ATIVOS = (STATUS_CONFIRMADO, STATUS_REAGENDADO)
 
+# Status que OCUPARAM o horario, olhando para tras (retrospecto/ocupacao).
+# Difere de STATUS_ATIVOS porque um atendimento passado que recebeu baixa vira
+# concluido/no_show — continua tendo ocupado a agenda naquele dia. So o
+# cancelado ficou de fora: ele devolveu a vaga.
+STATUS_OCUPARAM_HORARIO = (
+    STATUS_CONFIRMADO,
+    STATUS_REAGENDADO,
+    STATUS_CONCLUIDO,
+    STATUS_NO_SHOW,
+)
+
 # Tipo de desconto do vinculo cabeleireiro<->servico
 DESCONTO_PERCENTUAL = "percentual"  # desconto_valor em % (0-100)
 DESCONTO_VALOR = "valor"            # desconto_valor em R$ absoluto

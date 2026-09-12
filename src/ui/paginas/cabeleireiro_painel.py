@@ -71,12 +71,10 @@ def render() -> None:
         df = pd.DataFrame(por_dia, columns=["dia", "qtd"])
         graficos.linha(df, "dia", "qtd", key="cab_por_dia")
 
-    styles.titulo_secao("Minha agenda - proximos dias")
-    dias_grade = st.segmented_control(
-        "Ver", [7, 14, 30], default=7, format_func=lambda n: f"{n} dias", key="cab_ocup_per"
-    ) or 7
+    styles.titulo_secao("Minha agenda")
+    dias_grade, inicio_grade = ocupacao_ui.controles_periodo("cab_ocup", default_dias=7)
     dia_sel = ocupacao_ui.grade_ocupacao(
-        cabeleireiro_id=cab_id, dias=int(dias_grade), key_prefix="cab_ocup"
+        cabeleireiro_id=cab_id, dias=dias_grade, inicio=inicio_grade, key_prefix="cab_ocup"
     )
 
     if dia_sel is not None:

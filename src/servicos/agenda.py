@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy.orm import Session
 
+from src.constantes import STATUS_OCUPARAM_HORARIO
 from src.repositorios import agendamentos as repo_ag
 from src.repositorios import bloqueios as repo_bloqueios
 from src.repositorios import cabeleireiros as repo_cab
@@ -158,26 +159,33 @@ def blocos_livres(db: Session, *, cabeleireiro_id: int, dia: date) -> List[Tuple
 
 
 def ocupacao_por_dia(
-    db: Session, *, cabeleireiro_id: Optional[int] = None, dias: int = 14
+    db: Session, *, cabeleireiro_id: Optional[int] = None, dias: int = 14,
+    inicio: Optional[date] = None,
 ) -> List[dict]:
-    """Ocupacao de cada um dos proximos `dias`, para a visao panoramica do gestor.
+    """Ocupacao de uma janela de `dias` dias a partir de `inicio` (default hoje).
+
+    Serve tanto a visao para FRENTE (inicio=hoje) quanto o RETROSPECTO
+    (inicio=hoje-dias), usado para ver quem esteve marcado.
 
     cabeleireiro_id=None soma TODOS os cabeleireiros ativos. Para cada dia devolve:
-      {data, qtd (nº de agendamentos ativos), pct (ocupado/capacidade, 0-100 ou
-       None), aberto (bool)}.
+      {data, qtd, pct (ocupado/capacidade, 0-100 ou None), aberto (bool)}.
     Capacidade = minutos de trabalho do dia − almoco; ocupado = soma da duracao
-    dos agendamentos ativos. Dia sem horario de trabalho -> aberto=False.
+    dos agendamentos que OCUPARAM o horario. Dia sem trabalho -> aberto=False.
+
+    Conta STATUS_OCUPARAM_HORARIO, nao STATUS_ATIVOS: no passado o atendimento
+    que recebeu baixa virou concluido/no_show e sumiria da contagem — o dia de
+    quem marca presenca apareceria mais vazio que o de quem nao marca.
     """
-    hoje = date.today()
+    inicio = inicio or date.today()
     profs = ([repo_cab.buscar_por_id(db, cabeleireiro_id)] if cabeleireiro_id
              else repo_cab.listar(db))
     profs = [p for p in profs if p]
 
-    horizonte_ini = datetime.combine(hoje, time.min)
-    horizonte_fim = datetime.combine(hoje + timedelta(days=dias), time.min)
+    horizonte_ini = datetime.combine(inicio, time.min)
+    horizonte_fim = datetime.combine(inicio + timedelta(days=dias), time.min)
 
     acc: Dict[date, Dict[str, int]] = {
-        hoje + timedelta(d): {"qtd": 0, "ocup": 0, "cap": 0} for d in range(dias)
+        inicio + timedelta(d): {"qtd": 0, "ocup": 0, "cap": 0} for d in range(dias)
     }
 
     for p in profs:
@@ -188,12 +196,16 @@ def ocupacao_por_dia(
         almoco_min = 0
         if p.almoco_inicio and p.almoco_fim:
             almoco_min = int(
-                (datetime.combine(hoje, p.almoco_fim) - datetime.combine(hoje, p.almoco_inicio))
+                (datetime.combine(inicio, p.almoco_fim) - datetime.combine(inicio, p.almoco_inicio))
                 .total_seconds() // 60
             )
 
         ags_por_dia: Dict[date, List[int]] = defaultdict(lambda: [0, 0])  # [qtd, ocup_min]
-        for a in repo_ag.listar_por_cabeleireiro_no_dia(db, p.id, horizonte_ini, horizonte_fim):
+        for a in repo_ag.listar_por_cabeleireiro_no_dia(
+            db, p.id, horizonte_ini, horizonte_fim, apenas_ativos=False
+        ):
+            if a.status not in STATUS_OCUPARAM_HORARIO:
+                continue  # cancelado devolveu a vaga
             dur = int((a.fim - a.inicio).total_seconds() // 60)
             cel = ags_por_dia[a.inicio.date()]
             cel[0] += 1

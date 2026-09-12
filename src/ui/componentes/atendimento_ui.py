@@ -151,12 +151,18 @@ def _cancelar_pelo_salao(agendamento_id: int, *, restrito_a: Optional[int]) -> N
 
 
 def _card_agenda(a, *, quem: str, servico_nome: str, pode_dar_baixa: bool,
-                 restrito_a: Optional[int], key_prefix: str) -> None:
-    """Renderiza um atendimento do dia com badge e, se aplicavel, as acoes."""
+                 restrito_a: Optional[int], key_prefix: str,
+                 profissional: Optional[str] = None) -> None:
+    """Renderiza um atendimento do dia com badge e, se aplicavel, as acoes.
+
+    `profissional` so e' preenchido quando a lista mistura varios profissionais
+    (visao "Todos"); com um so, repetir o nome em toda linha seria ruido.
+    """
     st.markdown('<div class="bloco-card">', unsafe_allow_html=True)
+    com_quem = f" · ✂️ {profissional}" if profissional else ""
     st.markdown(
         f"🕑 **{a.inicio.strftime('%H:%M')}–{a.fim.strftime('%H:%M')}** · "
-        f"**{quem}** · {servico_nome} · 💰 {styles.moeda_br(a.preco_aplicado)}  "
+        f"**{quem}** · {servico_nome}{com_quem} · 💰 {styles.moeda_br(a.preco_aplicado)}  "
         f"{styles.badge_status(a.status)}",
         unsafe_allow_html=True,
     )
@@ -200,8 +206,14 @@ def tabela_agenda_do_dia(
         if not profs:
             return None
         if dia_externo:
-            prof = st.selectbox("Cabeleireiro", profs, format_func=lambda p: p.nome,
-                                key=f"{key_prefix}_prof")
+            # a grade de ocupacao pode estar somando TODOS; o detalhe precisa
+            # oferecer o mesmo, senao o dia diz "6 agendamentos" e a lista
+            # aparece vazia por estar filtrada num profissional sem atendimento
+            prof = st.selectbox(
+                "Cabeleireiro", [None] + list(profs),
+                format_func=lambda p: "Todos os cabeleireiros" if p is None else p.nome,
+                key=f"{key_prefix}_prof",
+            )
         else:
             c1, c2 = st.columns(2)
             prof = c1.selectbox("Cabeleireiro", profs, format_func=lambda p: p.nome,
@@ -211,26 +223,34 @@ def tabela_agenda_do_dia(
     restrito_a = prof.id if cabeleireiro_fixo is not None else None
     pode_dar_baixa = dia <= date.today()  # nao da baixa em agendamento futuro
 
+    # prof None = "Todos": agrega os profissionais e identifica cada linha
+    alvos = [prof] if prof is not None else list(profs)
+    varios = prof is None
+
     dia_ini = datetime.combine(dia, time.min)
     dia_fim = dia_ini + timedelta(days=1)
     with sessao() as db:
-        ags = repo_ag.listar_por_cabeleireiro_no_dia(db, prof.id, dia_ini, dia_fim, apenas_ativos=False)
         cards = []
-        for a in ags:
-            if a.cliente_id is not None:
-                cli = repo_cli.buscar_por_id(db, a.cliente_id)
-                quem = cli.nome if cli else "cliente"
-            else:
-                quem = f"{a.nome_avulso or 'avulso'} (avulso)"
-            serv = repo_serv.buscar_por_id(db, a.servico_id)
-            cards.append((a, quem, serv.nome if serv else "-"))
+        for alvo in alvos:
+            for a in repo_ag.listar_por_cabeleireiro_no_dia(
+                db, alvo.id, dia_ini, dia_fim, apenas_ativos=False
+            ):
+                if a.cliente_id is not None:
+                    cli = repo_cli.buscar_por_id(db, a.cliente_id)
+                    quem = cli.nome if cli else "cliente"
+                else:
+                    quem = f"{a.nome_avulso or 'avulso'} (avulso)"
+                serv = repo_serv.buscar_por_id(db, a.servico_id)
+                cards.append((a, quem, serv.nome if serv else "-", alvo.nome))
+    cards.sort(key=lambda t: t[0].inicio)  # ordem cronologica entre profissionais
 
     if not cards:
         st.caption("Nenhum atendimento marcado nesse dia.")
         return prof, dia
-    for a, quem, servico_nome in cards:
+    for a, quem, servico_nome, nome_prof in cards:
         _card_agenda(a, quem=quem, servico_nome=servico_nome, pode_dar_baixa=pode_dar_baixa,
-                     restrito_a=restrito_a, key_prefix=key_prefix)
+                     restrito_a=restrito_a, key_prefix=key_prefix,
+                     profissional=nome_prof if varios else None)
     return prof, dia
 
 

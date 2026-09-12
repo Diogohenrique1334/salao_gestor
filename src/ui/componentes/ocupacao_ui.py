@@ -12,8 +12,8 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
-from datetime import date
-from typing import List, Optional
+from datetime import date, timedelta
+from typing import List, Optional, Tuple
 
 import streamlit as st
 
@@ -22,6 +22,8 @@ from src.servicos import agenda
 from src.ui.componentes import styles
 
 _DIAS_CURTOS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
+_PROXIMOS = "Proximos"
+_ANTERIORES = "Anteriores"
 _POR_LINHA = 7  # uma semana por linha
 
 _CSS = f"""
@@ -69,10 +71,38 @@ def _html_card(item: dict, selecionado: bool) -> str:
     )
 
 
+def controles_periodo(key_prefix: str = "ocup", *, default_dias: int = 14) -> Tuple[int, date]:
+    """Controles de periodo (7/14/30) + sentido, devolvendo (dias, inicio).
+
+    Vive aqui, e nao em cada pagina, para o gestor e o cabeleireiro terem
+    exatamente o mesmo comportamento.
+
+    "Anteriores" = os `dias` dias terminando ONTEM. Nao inclui hoje de proposito:
+    hoje ja aparece em "Proximos", e sobrepor os dois confunde a leitura.
+    """
+    c1, c2 = st.columns([3, 2])
+    dias = c1.segmented_control(
+        "Periodo", [7, 14, 30], default=default_dias,
+        format_func=lambda n: f"{n} dias", key=f"{key_prefix}_per",
+    ) or default_dias
+    sentido = c2.segmented_control(
+        "Quando", [_PROXIMOS, _ANTERIORES], default=_PROXIMOS, key=f"{key_prefix}_sent",
+    ) or _PROXIMOS
+
+    dias = int(dias)
+    hoje = date.today()
+    inicio = hoje if sentido == _PROXIMOS else hoje - timedelta(days=dias)
+    return dias, inicio
+
+
 def grade_ocupacao(
-    *, cabeleireiro_id: Optional[int], dias: int = 14, key_prefix: str = "ocup"
+    *, cabeleireiro_id: Optional[int], dias: int = 14, key_prefix: str = "ocup",
+    inicio: Optional[date] = None,
 ) -> Optional[date]:
-    """Renderiza a grade dos proximos `dias` e devolve o dia SELECIONADO (ou None).
+    """Renderiza a grade da janela e devolve o dia SELECIONADO (ou None).
+
+    `inicio` define o primeiro dia da janela (default hoje); passe
+    hoje-dias para o retrospecto. Use controles_periodo() para obte-lo.
 
     cabeleireiro_id=None soma todos os profissionais ativos (visao do gestor).
     O dia escolhido fica em session_state[f"{key_prefix}_sel"], entao sobrevive
@@ -81,17 +111,25 @@ def grade_ocupacao(
     st.markdown(_CSS, unsafe_allow_html=True)
     chave_sel = f"{key_prefix}_sel"
 
+    inicio = inicio or date.today()
     with sessao() as db:
-        ocup = agenda.ocupacao_por_dia(db, cabeleireiro_id=cabeleireiro_id, dias=int(dias))
+        ocup = agenda.ocupacao_por_dia(
+            db, cabeleireiro_id=cabeleireiro_id, dias=int(dias), inicio=inicio
+        )
 
     if not any(i["aberto"] for i in ocup):
         st.info("Nenhum horario de trabalho cadastrado — sem horarios, nao ha ocupacao a mostrar.")
         return None
 
+    # selecao de uma janela anterior nao pode sobreviver a troca de periodo/sentido:
+    # o detalhe abaixo mostraria um dia que nao esta mais na grade
     selecionado: Optional[date] = st.session_state.get(chave_sel)
+    if selecionado is not None and not (inicio <= selecionado < inicio + timedelta(days=dias)):
+        st.session_state.pop(chave_sel, None)
+        selecionado = None
 
-    for inicio in range(0, len(ocup), _POR_LINHA):
-        faixa: List[dict] = ocup[inicio:inicio + _POR_LINHA]
+    for ini_linha in range(0, len(ocup), _POR_LINHA):  # nao sombrear `inicio`
+        faixa: List[dict] = ocup[ini_linha:ini_linha + _POR_LINHA]
         colunas = st.columns(_POR_LINHA)
         for col, item in zip(colunas, faixa):
             d = item["data"]
