@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 import streamlit as st
+from streamlit.components.v1 import html as componentes_html
 
 from src.constantes import (
     STATUS_CANCELADO,
@@ -134,8 +135,41 @@ _CSS = f"""
 """
 
 
+def _declarar_idioma_pt() -> None:
+    """Marca o documento como pt-BR e desliga a traducao automatica do navegador.
+
+    Por que: o Streamlit serve a pagina sem declarar idioma. O Chrome entao
+    chuta — e com os rotulos em portugues SEM acento ("Servico", "Horario") ele
+    chutava errado e "traduzia" a tela, estragando o conteudo: "Sex" virava
+    "Sexo", "Registrar atendimento" virava "Registrador" e "13:30" virava
+    "13h30". Declarando o idioma, ele para de tentar.
+
+    Precisa ser via componente: st.markdown(unsafe_allow_html=True) nao executa
+    <script>. O iframe tem a mesma origem, entao alcanca window.parent.
+    """
+    componentes_html(
+        """
+        <script>
+          const doc = window.parent.document;
+          doc.documentElement.lang = "pt-BR";
+          doc.documentElement.setAttribute("translate", "no");
+          doc.documentElement.classList.add("notranslate");
+          let meta = doc.querySelector('meta[name="google"]');
+          if (!meta) {
+            meta = doc.createElement("meta");
+            meta.setAttribute("name", "google");
+            doc.head.appendChild(meta);
+          }
+          meta.setAttribute("content", "notranslate");
+        </script>
+        """,
+        height=0,
+    )
+
+
 def aplicar_estilo_base() -> None:
     """Injeta o CSS global. Chamar uma vez no inicio de cada pagina."""
+    _declarar_idioma_pt()
     st.markdown(_CSS, unsafe_allow_html=True)
 
 

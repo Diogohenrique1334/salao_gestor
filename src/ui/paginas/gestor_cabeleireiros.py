@@ -117,7 +117,11 @@ def _gerir_almoco(prof) -> None:
         fim = c2.time_input("Fim", value=prof.almoco_fim or time(13, 0), key=f"af_{prof.id}")
         c3.markdown("&nbsp;")
         salvar = c3.form_submit_button("Salvar almoco", type="primary")
-        remover = c3.form_submit_button("Sem almoco") if tem else False
+        # SEMPRE renderiza o botao (so desabilita quando nao ha almoco). Cria-lo
+        # condicionalmente mudava a FORMA da arvore de widgets entre um rerun e
+        # outro, e o front do Streamlit quebrava com
+        # "NotFoundError: Failed to execute 'removeChild' on 'Node'".
+        remover = c3.form_submit_button("Sem almoco", disabled=not tem)
     if salvar:
         if ini >= fim:
             st.error("Inicio deve ser antes do fim.")
