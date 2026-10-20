@@ -52,3 +52,6 @@ assets/identidade.png
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# artes geradas (reproduziveis com scripts/gerar_arte_qr.py)
+divulgacao/
