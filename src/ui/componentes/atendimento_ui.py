@@ -23,7 +23,7 @@ from src.repositorios import agendamentos as repo_ag
 from src.repositorios import cabeleireiros as repo_cab
 from src.repositorios import clientes as repo_cli
 from src.repositorios import servicos as repo_serv
-from src.servicos import agenda, precificacao, reservas
+from src.servicos import agenda, agendamento_fluxo, precificacao, reservas
 from src.ui.componentes import styles
 
 
@@ -96,21 +96,36 @@ def formulario_atendimento(*, cabeleireiro_fixo=None, key_prefix: str = "at") ->
         if tipo == "Pessoa avulsa" and not (nome_avulso and nome_avulso.strip()):
             st.error("Informe o nome da pessoa.")
             return
+
+        # Idempotencia por CONTEUDO: esta tela nao troca de pagina no sucesso,
+        # entao um clique repetido reenviaria exatamente o mesmo atendimento.
+        # Guardar a assinatura do ultimo registro barra a repeticao sem travar
+        # o balcao, que precisa lancar varios atendimentos em sequencia.
+        assinatura = (prof.id, servico.id, slot.isoformat(), cliente_id, nome_avulso)
+        chave_ultimo = f"{key_prefix}_ultimo"
+        if st.session_state.get(chave_ultimo) == assinatura:
+            st.info("Esse atendimento ja foi registrado. Mude algum campo para lancar outro.")
+            return
+
         try:
-            with sessao() as db:
-                ag = reservas.criar_reserva(
-                    db, cabeleireiro_id=prof.id, servico_id=servico.id, inicio=slot,
+            with st.spinner("Registrando..."):
+                ag_id, canais = agendamento_fluxo.criar_e_notificar(
+                    cabeleireiro_id=prof.id, servico_id=servico.id, inicio=slot,
                     cliente_id=cliente_id, nome_avulso=nome_avulso, telefone_avulso=telefone_avulso,
                 )
-                canais = eventos.enviar_confirmacao(db, ag)
-                repo_ag.marcar_canal_confirmacao(db, ag.id, ",".join(canais))
-            st.success(f"Atendimento registrado (#{ag.id}) - confirmacao via {', '.join(canais)}.")
         except reservas.SlotIndisponivel:
             st.error("Esse horario acabou de ser ocupado. Escolha outro.")
+            return
         except reservas.HorarioBloqueado:
             st.error("A agenda deste cabeleireiro esta bloqueada nesse periodo.")
+            return
         except reservas.ServicoNaoOferecido:
             st.error("Servico indisponivel para este cabeleireiro.")
+            return
+
+        st.session_state[chave_ultimo] = assinatura
+        via = ", ".join(canais) if canais else "console"
+        st.success(f"Atendimento registrado (#{ag_id}) - confirmacao via {via}.")
 
 
 def _baixa_presenca(agendamento_id: int, *, compareceu: bool, restrito_a: Optional[int]) -> None:

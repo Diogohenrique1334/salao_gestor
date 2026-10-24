@@ -10,15 +10,26 @@ from __future__ import annotations
 import streamlit as st
 
 from src.db.engine import sessao
-from src.notificacoes import eventos
-from src.repositorios import agendamentos as repo_ag
 from src.repositorios import cabeleireiros as repo_cab
 from src.repositorios import servicos as repo_serv
-from src.servicos import agenda, precificacao, reservas
+from src.servicos import agenda, agendamento_fluxo, precificacao, reservas
 from src.ui.componentes import guards, styles
 
 
 _CHAVE_CONFIRMADO = "agendamento_confirmado"
+# Trava de submissao: marcada ANTES do trabalho lento. Cliques enfileirados
+# pelo navegador chegam como reruns independentes, cada um com o botao em True;
+# sem a trava, cada um virava uma reserva.
+_CHAVE_EM_CURSO = "agendamento_em_curso"
+# Impressao da lista de horarios que o cliente REALMENTE viu. O selectbox do
+# Streamlit trafega o INDICE, nao o valor: se a lista mudar entre a tela e o
+# clique, o mesmo indice aponta para outro horario. Comparar a lista detecta
+# isso e nos faz recusar em vez de reservar um horario que ninguem escolheu.
+_CHAVE_SLOTS_NA_TELA = "agendamento_slots_na_tela"
+
+
+def _liberar_trava() -> None:
+    st.session_state.pop(_CHAVE_EM_CURSO, None)
 
 
 def _aviso_telefone(usuario: dict) -> None:
@@ -47,8 +58,14 @@ def _tela_confirmacao(dados: dict) -> None:
             st.caption("📩 Não achou o e-mail? Veja a **caixa de spam** e marque como "
                        "\"não é spam\" — assim os próximos chegam direto.")
     st.info("Você pode ver, remarcar ou cancelar em **Meus agendamentos** (no menu ao lado).")
-    if st.button("Agendar outro horário", type="primary", use_container_width=True):
+    # Secundario e estreito DE PROPOSITO: antes era primario e de largura
+    # total, igualzinho ao "Confirmar agendamento" e na mesma posicao da tela.
+    # Quem clicava duas vezes no mesmo ponto voltava ao formulario e confirmava
+    # de novo sem perceber.
+    if st.button("Agendar outro horário"):
         del st.session_state[_CHAVE_CONFIRMADO]
+        _liberar_trava()
+        st.session_state.pop(_CHAVE_SLOTS_NA_TELA, None)
         st.rerun()
 
 
@@ -123,29 +140,61 @@ def render() -> None:
         return
     slot = st.selectbox("Horario", slots, format_func=lambda dt: dt.strftime("%H:%M"))
 
+    # Guarda a lista EXATA que foi desenhada agora. No proximo run (o do clique)
+    # ela vira a referencia: se a lista tiver mudado, o indice que o navegador
+    # mandou aponta para outro horario e nos recusamos em vez de reservar
+    # errado. Tem que ser lido ANTES de sobrescrever.
+    slots_agora = [dt.isoformat() for dt in slots]
+    slots_na_tela = st.session_state.get(_CHAVE_SLOTS_NA_TELA)
+    st.session_state[_CHAVE_SLOTS_NA_TELA] = slots_agora
+
     # 5) Confirmar
     st.divider()
     resumo = (f"**{servico.nome}** com **{prof.nome}** em "
               f"**{slot.strftime('%d/%m/%Y às %H:%M')}** — total **{styles.moeda_br(calc.preco_final)}**")
     st.markdown(resumo)
-    if st.button("Confirmar agendamento", type="primary", use_container_width=True):
-        try:
-            with sessao() as db:
-                ag = reservas.criar_reserva(
-                    db, cliente_id=usuario["id"], cabeleireiro_id=prof.id,
-                    servico_id=servico.id, inicio=slot,
-                )
-                canais = eventos.enviar_confirmacao(db, ag)
-                repo_ag.marcar_canal_confirmacao(db, ag.id, ",".join(canais))
-            # guarda os dados e troca para a tela de confirmacao (sem balao)
-            st.session_state[_CHAVE_CONFIRMADO] = {
-                "servico": servico.nome, "prof": prof.nome,
-                "inicio": slot, "preco": calc.preco_final, "canais": canais,
-            }
-            st.rerun()
-        except reservas.SlotIndisponivel:
-            st.error("Ops, esse horario acabou de ser ocupado. Escolha outro.")
-        except reservas.HorarioBloqueado:
-            st.error("Este cabeleireiro bloqueou a agenda nesse periodo. Escolha outro dia.")
-        except reservas.ServicoNaoOferecido:
-            st.error("Este servico nao esta mais disponivel com este cabeleireiro.")
+    if not st.button("Confirmar agendamento", type="primary", use_container_width=True):
+        return
+
+    # --- a partir daqui o cliente clicou; as tres guardas vem antes do banco ---
+    if st.session_state.get(_CHAVE_EM_CURSO):
+        # clique repetido enquanto o primeiro ainda rodava: ignora em silencio
+        st.info("Já estamos registrando seu agendamento, aguarde um instante.")
+        return
+
+    if slots_na_tela is not None and slots_na_tela != slots_agora:
+        st.warning("A agenda mudou enquanto você confirmava. "
+                   "Confira o horário acima e toque em confirmar de novo.")
+        return
+
+    st.session_state[_CHAVE_EM_CURSO] = True
+    try:
+        with st.spinner("Registrando seu agendamento..."):
+            _id, canais = agendamento_fluxo.criar_e_notificar(
+                cliente_id=usuario["id"], cabeleireiro_id=prof.id,
+                servico_id=servico.id, inicio=slot,
+            )
+    except reservas.SlotIndisponivel:
+        _liberar_trava()
+        st.error("Ops, esse horario acabou de ser ocupado. Escolha outro.")
+        return
+    except reservas.HorarioBloqueado:
+        _liberar_trava()
+        st.error("Este cabeleireiro bloqueou a agenda nesse periodo. Escolha outro dia.")
+        return
+    except reservas.ServicoNaoOferecido:
+        _liberar_trava()
+        st.error("Este servico nao esta mais disponivel com este cabeleireiro.")
+        return
+    except Exception:  # noqa: BLE001 - nao deixar a trava presa por erro inesperado
+        _liberar_trava()
+        st.error("Nao conseguimos registrar agora. Tente novamente em instantes.")
+        return
+
+    # guarda os dados e troca para a tela de confirmacao (sem balao). A trava
+    # SEGUE marcada de proposito: so o botao "Agendar outro horário" a libera.
+    st.session_state[_CHAVE_CONFIRMADO] = {
+        "servico": servico.nome, "prof": prof.nome,
+        "inicio": slot, "preco": calc.preco_final, "canais": canais,
+    }
+    st.rerun()
