@@ -106,6 +106,10 @@ def _avisar_segredo_inseguro() -> None:
 
 def main() -> None:
     styles.logo_sidebar()   # marca no topo da sidebar, em todas as telas
+    # grava/apaga o cookie pedido no run ANTERIOR (login/logout). Tem que ser
+    # aqui: este run termina desenhando a pagina, entao o componente chega ao
+    # navegador e executa de verdade.
+    guards.sincronizar_cookie()
     guards.restaurar_sessao()
     usuario = guards.usuario_atual()
 

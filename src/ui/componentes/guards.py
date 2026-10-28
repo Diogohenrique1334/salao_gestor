@@ -41,7 +41,7 @@ from src.repositorios import clientes as repo_clientes
 
 _COOKIE_NOME = "salao_sessao"
 _CHAVE_USUARIO = "usuario"
-_CHAVE_COOKIE_MGR = "_cookie_mgr"
+_CHAVE_COOKIE_PENDENTE = "_cookie_pendente"
 # marca que o usuario saiu de proposito nesta sessao. Necessario porque
 # st.context.cookies vem dos headers do HANDSHAKE: apos o logout o cookie ja
 # foi apagado no navegador, mas os headers desta conexao ainda o contem - sem
@@ -88,17 +88,18 @@ def _verificar_token(token: str) -> Optional[int]:
 
 # ----- cookie manager: usado apenas para ESCREVER/APAGAR --------------------
 def _cookie_mgr():
-    """Retorna um CookieManager unico por sessao, ou None se indisponivel."""
-    if _CHAVE_COOKIE_MGR in st.session_state:
-        return st.session_state[_CHAVE_COOKIE_MGR]
+    """Constroi um CookieManager. NAO cachear a instancia.
+
+    O `__init__` do CookieManager e' o que MONTA o componente na pagina. Ao
+    guardar a instancia em session_state, os runs seguintes recebiam o objeto
+    sem renderizar nada - e o Streamlit descarta o componente que nao foi
+    desenhado no run. Resultado: a escrita pendente nunca chegava ao navegador.
+    """
     try:
         import extra_streamlit_components as stx
 
-        mgr = stx.CookieManager(key="cookie_mgr_salao")
-        st.session_state[_CHAVE_COOKIE_MGR] = mgr
-        return mgr
+        return stx.CookieManager(key="cookie_mgr_salao")
     except Exception:
-        st.session_state[_CHAVE_COOKIE_MGR] = None
         return None
 
 
@@ -162,37 +163,63 @@ def restaurar_sessao() -> None:
 
 
 def login(cliente: Cliente, lembrar: bool = True) -> None:
-    """Registra o usuario na sessao e (se lembrar) grava o cookie assinado."""
+    """Registra o usuario na sessao e AGENDA a gravacao do cookie assinado.
+
+    A escrita nao acontece aqui de proposito: quem chama faz `st.rerun()` logo
+    em seguida, e um rerun no mesmo run aborta o script ANTES de o delta do
+    componente chegar ao navegador - o cookie simplesmente nao era gravado.
+    Quem grava e' sincronizar_cookie(), no topo do run seguinte, que termina
+    renderizando a pagina normalmente.
+    """
     st.session_state[_CHAVE_USUARIO] = _para_dict(cliente)
     st.session_state.pop(_CHAVE_LOGOUT, None)   # limpa a trava de logout
     if lembrar:
-        mgr = _cookie_mgr()
-        if mgr is not None:
-            try:
-                mgr.set(
-                    _COOKIE_NOME,
-                    _assinar(cliente.id),
-                    # mesma janela do token: o navegador descarta o cookie no
-                    # mesmo momento em que o servidor deixaria de aceita-lo
-                    expires_at=datetime.now() + timedelta(days=SESSAO_VALIDADE_DIAS),
-                    key="set_cookie_login",
-                )
-            except Exception:
-                pass
+        st.session_state[_CHAVE_COOKIE_PENDENTE] = ("gravar", _assinar(cliente.id))
 
 
 def logout() -> None:
-    """Encerra a sessao e remove o cookie."""
+    """Encerra a sessao e agenda a remocao do cookie."""
     st.session_state.pop(_CHAVE_USUARIO, None)
     # trava a restauracao: o cookie sai do navegador, mas os headers DESTA
     # conexao ainda o carregam (ver _CHAVE_LOGOUT).
     st.session_state[_CHAVE_LOGOUT] = True
+    st.session_state[_CHAVE_COOKIE_PENDENTE] = ("apagar", None)
+
+
+def sincronizar_cookie() -> None:
+    """Executa a gravacao/remocao pendente do cookie. Chamar no TOPO do app.
+
+    Precisa rodar num run que termina desenhando a pagina (sem st.rerun), para
+    o componente ser enviado ao navegador e de fato executar.
+    """
+    pendente = st.session_state.pop(_CHAVE_COOKIE_PENDENTE, None)
+    if pendente is None:
+        return
+    acao, valor = pendente
     mgr = _cookie_mgr()
-    if mgr is not None:
-        try:
+    if mgr is None:
+        return
+    try:
+        if acao == "gravar":
+            mgr.set(
+                _COOKIE_NOME,
+                valor,
+                # mesma janela do token: o navegador descarta o cookie no
+                # mesmo momento em que o servidor deixaria de aceita-lo
+                expires_at=datetime.now() + timedelta(days=SESSAO_VALIDADE_DIAS),
+                # LAX, nao o "strict" que e' o default da biblioteca: com
+                # strict o navegador NAO manda o cookie quando o app e' aberto
+                # a partir de um link externo (WhatsApp, QR code, atalho na
+                # tela inicial) - a pessoa caia na tela de login mesmo com a
+                # sessao valida. Lax manda em navegacao de topo e continua
+                # barrando requisicao de terceiro.
+                same_site="lax",
+                key="set_cookie_login",
+            )
+        else:
             mgr.delete(_COOKIE_NOME, key="del_cookie_login")
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 
 def esta_logado() -> bool:
