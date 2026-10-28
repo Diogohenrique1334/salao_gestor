@@ -11,6 +11,7 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
+import html
 from datetime import date, datetime, time, timedelta
 from typing import Optional, Tuple
 
@@ -18,7 +19,6 @@ import streamlit as st
 
 from src.constantes import STATUS_ATIVOS
 from src.db.engine import sessao
-from src.notificacoes import eventos
 from src.repositorios import agendamentos as repo_ag
 from src.repositorios import cabeleireiros as repo_cab
 from src.repositorios import clientes as repo_cli
@@ -149,14 +149,14 @@ def _cancelar_pelo_salao(agendamento_id: int, *, restrito_a: Optional[int]) -> N
     `restrito_a` None = gestor (irrestrito); com id = o proprio cabeleireiro.
     """
     try:
-        with sessao() as db:
-            cancelado = reservas.cancelar_reserva(
-                db,
-                agendamento_id=agendamento_id,
-                cabeleireiro_id=restrito_a,
-                por_gestor=(restrito_a is None),
-            )
-            eventos.enviar_cancelamento(db, cancelado)
+        # COMMIT antes do e-mail (ver servicos/agendamento_fluxo): com o envio
+        # dentro da transacao, um segundo clique ainda via o agendamento ATIVO
+        # e cancelava de novo, mandando o aviso duas vezes ao cliente.
+        agendamento_fluxo.cancelar_e_notificar(
+            agendamento_id=agendamento_id,
+            cabeleireiro_id=restrito_a,
+            por_gestor=(restrito_a is None),
+        )
         st.toast("Agendamento cancelado. Cliente avisado.")
         st.rerun()
     except reservas.NaoAutorizado:
@@ -174,11 +174,16 @@ def _card_agenda(a, *, quem: str, servico_nome: str, pode_dar_baixa: bool,
     (visao "Todos"); com um so, repetir o nome em toda linha seria ruido.
     """
     st.markdown('<div class="bloco-card">', unsafe_allow_html=True)
-    com_quem = f" · ✂️ {profissional}" if profissional else ""
+    com_quem = f" · ✂️ {html.escape(profissional)}" if profissional else ""
+    # Hora em linha propria e destacada: o barbeiro le a agenda de relance, e
+    # em texto corrido o horario se perdia no meio da frase.
+    # html.escape: `quem` e `servico_nome` vem do banco (nome digitado pelo
+    # cliente) e isto e' renderizado com unsafe_allow_html.
     st.markdown(
-        f"🕑 **{a.inicio.strftime('%H:%M')}–{a.fim.strftime('%H:%M')}** · "
-        f"**{quem}** · {servico_nome}{com_quem} · 💰 {styles.moeda_br(a.preco_aplicado)}  "
-        f"{styles.badge_status(a.status)}",
+        f'<div class="ag-hora">{a.inicio.strftime("%H:%M")}–{a.fim.strftime("%H:%M")}</div>'
+        f'<div class="ag-quem">{html.escape(quem)}</div>'
+        f'<div class="ag-det">{html.escape(servico_nome)}{com_quem} · '
+        f'{styles.moeda_br(a.preco_aplicado)} &nbsp;{styles.badge_status(a.status)}</div>',
         unsafe_allow_html=True,
     )
     if a.status in STATUS_ATIVOS:

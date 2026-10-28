@@ -195,6 +195,6 @@ def agenda_do_dia(
         f"Olá, {nome_profissional}. Bom dia!\n\n"
         f"Você tem {total} {plural} hoje ({quando}).{abertura}\n\n"
         f"{linhas}\n\n"
-        f"Bom trabalho! — {salao}"
+        f"Bom trabalho! - {salao}"
     )
     return Mensagem(assunto=f"Sua agenda de {quando} - {total} {plural}", corpo=corpo)

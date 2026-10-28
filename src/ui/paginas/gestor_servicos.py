@@ -44,7 +44,7 @@ def _lista_servicos() -> None:
 
     for s in servs:
         status = "🟢 ativo" if s.ativo else "⚪ inativo"
-        with st.expander(f"{s.nome} — {styles.moeda_br(s.preco_base)} · {s.duracao_min} min · {status}"):
+        with st.expander(f"{s.nome} - {styles.moeda_br(s.preco_base)} · {s.duracao_min} min · {status}"):
             with st.form(f"edit_servico_{s.id}"):
                 c1, c2, c3 = st.columns([2, 1, 1])
                 nome = c1.text_input("Nome", value=s.nome, key=f"n_{s.id}")

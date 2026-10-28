@@ -127,6 +127,31 @@ _CSS = f"""
   /* checkbox marcado tambem fica amarelo: o "check" precisa ser escuro */
   [data-testid="stCheckbox"] svg {{ color: {COR_SOBRE_DESTAQUE} !important; fill: {COR_SOBRE_DESTAQUE} !important; }}
 
+  /* ----- lista de servicos (st.radio) -----
+     O cliente escolhia o servico num menu fechado de 11 itens, cinco deles
+     comecando com "Corte" - e marcava errado. Agora e' lista aberta: nome
+     grande e em destaque, preco/duracao na legenda. Os seletores vao por
+     data-testid (estavel); as classes st-emotion-* sao geradas por build. */
+  [data-testid="stRadio"] label div[data-testid="stMarkdownContainer"] p {{
+      font-size: 1.06rem !important;
+      font-weight: 700 !important;
+      color: {COR_TEXTO} !important;
+      line-height: 1.3;
+  }}
+  [data-testid="stRadio"] label {{ padding: 5px 0; }}
+  [data-testid="stRadio"] [data-testid="stCaptionContainer"] p {{
+      font-size: .88rem !important;
+      color: {COR_TEXTO_FRACO} !important;
+  }}
+
+  /* ----- agenda do dia: hora em destaque, nome maior ----- */
+  .ag-hora {{
+      font-size: 1.22rem; font-weight: 800; color: {COR_DESTAQUE};
+      line-height: 1.1; letter-spacing: .01em;
+  }}
+  .ag-quem {{ font-size: 1.02rem; font-weight: 600; color: #fff; margin-top: 3px; }}
+  .ag-det  {{ font-size: .86rem; color: {COR_TEXTO_FRACO}; margin-top: 3px; }}
+
   /* item de menu ativo na sidebar acompanha a marca */
   [data-testid="stSidebarNav"] a[aria-current="page"] {{
       border-left: 3px solid {COR_DESTAQUE};

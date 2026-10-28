@@ -93,3 +93,58 @@ def criar_e_notificar(
         canais = []
 
     return agendamento_id, canais
+
+
+def cancelar_e_notificar(
+    *,
+    agendamento_id: int,
+    cliente_id: Optional[int] = None,
+    cabeleireiro_id: Optional[int] = None,
+    por_gestor: bool = False,
+) -> None:
+    """Cancela, COMMITA, e so entao avisa cliente e profissional.
+
+    Mesma razao de criar_e_notificar: com o e-mail dentro da transacao, um
+    segundo clique ainda via o agendamento ATIVO (o cancelamento nao tinha
+    commitado) e cancelava de novo - mandando o aviso duas vezes.
+    """
+    with sessao() as db:
+        reservas.cancelar_reserva(
+            db,
+            agendamento_id=agendamento_id,
+            cliente_id=cliente_id,
+            cabeleireiro_id=cabeleireiro_id,
+            por_gestor=por_gestor,
+        )
+
+    try:
+        with sessao() as db:
+            ag = repo_ag.buscar_por_id(db, agendamento_id)
+            if ag is not None:
+                eventos.enviar_cancelamento(db, ag)
+    except Exception:  # noqa: BLE001 - cancelamento ja vale; aviso e' acessorio
+        pass
+
+
+def reagendar_e_notificar(
+    *, agendamento_id: int, cliente_id: int, novo_inicio: datetime
+) -> datetime:
+    """Remarca, COMMITA, e so entao avisa. Devolve o inicio ANTIGO.
+
+    O horario antigo so existe antes da escrita e a mensagem de remarcacao
+    precisa dele para dizer o de->para (contrato de reservas.reagendar_reserva).
+    """
+    with sessao() as db:
+        _ag, inicio_antigo = reservas.reagendar_reserva(
+            db, agendamento_id=agendamento_id, cliente_id=cliente_id, novo_inicio=novo_inicio
+        )
+
+    try:
+        with sessao() as db:
+            ag = repo_ag.buscar_por_id(db, agendamento_id)
+            if ag is not None:
+                eventos.enviar_reagendamento(db, ag, inicio_antigo)
+    except Exception:  # noqa: BLE001 - remarcacao ja vale; aviso e' acessorio
+        pass
+
+    return inicio_antigo

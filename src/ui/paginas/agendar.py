@@ -13,14 +13,15 @@ from src.db.engine import sessao
 from src.repositorios import cabeleireiros as repo_cab
 from src.repositorios import servicos as repo_serv
 from src.servicos import agenda, agendamento_fluxo, precificacao, reservas
-from src.ui.componentes import guards, styles
+from src.ui.componentes import acao_unica, guards, styles
 
 
 _CHAVE_CONFIRMADO = "agendamento_confirmado"
-# Trava de submissao: marcada ANTES do trabalho lento. Cliques enfileirados
-# pelo navegador chegam como reruns independentes, cada um com o botao em True;
-# sem a trava, cada um virava uma reserva.
-_CHAVE_EM_CURSO = "agendamento_em_curso"
+# Nome da acao de confirmar (ver componentes/acao_unica.py). O botao fica
+# DESABILITADO na tela enquanto a reserva e' gravada: cliques enfileirados
+# pelo navegador chegavam como reruns independentes, cada um com o botao em
+# True, e cada um virava uma reserva.
+_ACAO_CONFIRMAR = "agendar_confirmar"
 # Impressao da lista de horarios que o cliente REALMENTE viu. O selectbox do
 # Streamlit trafega o INDICE, nao o valor: se a lista mudar entre a tela e o
 # clique, o mesmo indice aponta para outro horario. Comparar a lista detecta
@@ -29,7 +30,7 @@ _CHAVE_SLOTS_NA_TELA = "agendamento_slots_na_tela"
 
 
 def _liberar_trava() -> None:
-    st.session_state.pop(_CHAVE_EM_CURSO, None)
+    acao_unica.liberar(_ACAO_CONFIRMAR)
 
 
 def _aviso_telefone(usuario: dict) -> None:
@@ -56,7 +57,7 @@ def _tela_confirmacao(dados: dict) -> None:
         # cliente vai procurar, evita o "nao recebi" virar suporte para o salao.
         if "email" in dados["canais"]:
             st.caption("📩 Não achou o e-mail? Veja a **caixa de spam** e marque como "
-                       "\"não é spam\" — assim os próximos chegam direto.")
+                       "\"não é spam\" - assim os próximos chegam direto.")
     st.info("Você pode ver, remarcar ou cancelar em **Meus agendamentos** (no menu ao lado).")
     # Secundario e estreito DE PROPOSITO: antes era primario e de largura
     # total, igualzinho ao "Confirmar agendamento" e na mesma posicao da tela.
@@ -105,14 +106,27 @@ def render() -> None:
 
     styles.titulo_secao("2. Escolha o servico")
 
-    def _label(item):
+    # RADIO, nao selectbox: sao 11 servicos e cinco comecam com "Corte"
+    # (Corte, Corte e alisante, Corte e barba, Corte e luzes, Corte e
+    # sombrancelha). Num menu fechado, com a fonte pequena do Streamlit, viram
+    # cinco linhas quase identicas no celular - e o cliente marcava o servico
+    # errado. Em lista aberta, cada um ocupa a propria linha, com o nome em
+    # destaque e preco/duracao na legenda abaixo (ver o CSS stRadio em styles).
+    def _legenda(item):
         s, calc = item
         preco = styles.moeda_br(calc.preco_final)
         if calc.desconto > 0:
-            return f"{s.nome} — {preco} (de {styles.moeda_br(calc.preco_base)}) · {s.duracao_min} min"
-        return f"{s.nome} — {preco} · {s.duracao_min} min"
+            return f"{preco} (de {styles.moeda_br(calc.preco_base)}) - {s.duracao_min} min"
+        return f"{preco} - {s.duracao_min} min"
 
-    servico, calc = st.selectbox("Servico", servicos, format_func=_label)
+    indice = st.radio(
+        "Servico",
+        options=range(len(servicos)),
+        format_func=lambda i: servicos[i][0].nome,
+        captions=[_legenda(item) for item in servicos],
+        label_visibility="collapsed",
+    )
+    servico, calc = servicos[indice]
     if calc.desconto > 0:
         st.markdown(
             styles.badge(f"Desconto: {styles.moeda_br(calc.desconto)}",
@@ -146,28 +160,32 @@ def render() -> None:
     # errado. Tem que ser lido ANTES de sobrescrever.
     slots_agora = [dt.isoformat() for dt in slots]
     slots_na_tela = st.session_state.get(_CHAVE_SLOTS_NA_TELA)
+    lista_mudou = slots_na_tela is not None and slots_na_tela != slots_agora
     st.session_state[_CHAVE_SLOTS_NA_TELA] = slots_agora
 
     # 5) Confirmar
     st.divider()
     resumo = (f"**{servico.nome}** com **{prof.nome}** em "
-              f"**{slot.strftime('%d/%m/%Y às %H:%M')}** — total **{styles.moeda_br(calc.preco_final)}**")
+              f"**{slot.strftime('%d/%m/%Y às %H:%M')}** - total **{styles.moeda_br(calc.preco_final)}**")
     st.markdown(resumo)
-    if not st.button("Confirmar agendamento", type="primary", use_container_width=True):
-        return
 
-    # --- a partir daqui o cliente clicou; as tres guardas vem antes do banco ---
-    if st.session_state.get(_CHAVE_EM_CURSO):
-        # clique repetido enquanto o primeiro ainda rodava: ignora em silencio
-        st.info("Já estamos registrando seu agendamento, aguarde um instante.")
-        return
-
-    if slots_na_tela is not None and slots_na_tela != slots_agora:
+    # A agenda mudou desde a tela que o cliente estava vendo (outra pessoa
+    # pegou um horario). Nem desenhamos o botao de verdade: assim um clique
+    # que ja estava a caminho nao tem onde pegar, e o cliente reconfere.
+    # O `ocupado` evita entrar aqui no run que esta EXECUTANDO a reserva -
+    # ali a lista mudou por culpa nossa, e sair agora travaria o botao.
+    if lista_mudou and not acao_unica.ocupado(_ACAO_CONFIRMAR):
         st.warning("A agenda mudou enquanto você confirmava. "
                    "Confira o horário acima e toque em confirmar de novo.")
+        st.button("Confirmar agendamento", type="primary",
+                  use_container_width=True, disabled=True, key="confirmar_bloqueado")
         return
 
-    st.session_state[_CHAVE_EM_CURSO] = True
+    if not acao_unica.botao("Confirmar agendamento", nome=_ACAO_CONFIRMAR,
+                            rotulo_ocupado="Registrando seu agendamento...",
+                            type="primary", use_container_width=True):
+        return
+
     try:
         with st.spinner("Registrando seu agendamento..."):
             _id, canais = agendamento_fluxo.criar_e_notificar(

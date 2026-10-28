@@ -13,14 +13,13 @@ import streamlit as st
 
 from src.constantes import STATUS_ATIVOS, STATUS_CONCLUIDO
 from src.db.engine import sessao
-from src.notificacoes import eventos
 from src.repositorios import agendamentos as repo_ag
 from src.repositorios import cabeleireiros as repo_cab
 from src.repositorios import clientes as repo_cli
 from src.repositorios import nps as repo_nps
 from src.repositorios import servicos as repo_serv
-from src.servicos import agenda, nps, reservas
-from src.ui.componentes import guards, styles
+from src.servicos import agenda, agendamento_fluxo, nps, reservas
+from src.ui.componentes import acao_unica, guards, styles
 
 
 def _atualizar_whatsapp(usuario: dict) -> None:
@@ -54,22 +53,31 @@ def _bloco_reagendar(usuario: dict, ag) -> None:
         return
     novo_slot = st.selectbox("Novo horario", slots, format_func=lambda dt: dt.strftime("%H:%M"),
                              key=f"rs_{ag.id}")
-    if st.button("Confirmar reagendamento", key=f"rb_{ag.id}", type="primary"):
+    nome_acao = f"reagendar_{ag.id}"
+    if acao_unica.botao("Confirmar reagendamento", nome=nome_acao,
+                        rotulo_ocupado="Remarcando...", type="primary"):
+        ok = False
         try:
-            with sessao() as db:
-                novo, inicio_antigo = reservas.reagendar_reserva(
-                    db, agendamento_id=ag.id, cliente_id=usuario["id"], novo_inicio=novo_slot
-                )
-                # evento proprio de REMARCACAO (de->para): reaproveitar a
-                # confirmacao faria o cliente ler "agendamento confirmado" sem
-                # perceber que o horario mudou. Avisa o profissional tambem.
-                eventos.enviar_reagendamento(db, novo, inicio_antigo)
-            st.success("Reagendado com sucesso!")
-            st.rerun()
+            # o evento de REMARCACAO (de->para) e' proprio: reaproveitar a
+            # confirmacao faria o cliente ler "agendamento confirmado" sem
+            # perceber que o horario mudou. Avisa o profissional tambem.
+            agendamento_fluxo.reagendar_e_notificar(
+                agendamento_id=ag.id, cliente_id=usuario["id"], novo_inicio=novo_slot
+            )
+            ok = True
         except reservas.SlotIndisponivel:
             st.error("Esse horario acabou de ser ocupado. Tente outro.")
         except reservas.HorarioBloqueado:
             st.error("A agenda esta bloqueada nesse periodo. Escolha outro dia.")
+        except reservas.NaoAutorizado:
+            st.error("Voce nao pode remarcar este agendamento.")
+        except Exception:  # noqa: BLE001 - nunca deixar o botao travado
+            st.error("Nao conseguimos remarcar agora. Tente novamente em instantes.")
+        finally:
+            acao_unica.liberar(nome_acao)
+        if ok:
+            st.toast("Reagendado com sucesso!")
+            st.rerun()
 
 
 def _bloco_nps(usuario: dict, ag, resposta) -> None:
@@ -110,17 +118,26 @@ def _card_agendamento(usuario: dict, ag, resposta_nps=None) -> None:
     )
     if editavel:
         col1, col2 = st.columns([1, 1])
-        if col1.button("Cancelar", key=f"c_{ag.id}"):
-            try:
-                with sessao() as db:
-                    cancelado = reservas.cancelar_reserva(
-                        db, agendamento_id=ag.id, cliente_id=usuario["id"]
+        nome_acao = f"cancelar_{ag.id}"
+        with col1:
+            if acao_unica.botao("Cancelar", nome=nome_acao, rotulo_ocupado="Cancelando..."):
+                ok = False
+                try:
+                    agendamento_fluxo.cancelar_e_notificar(
+                        agendamento_id=ag.id, cliente_id=usuario["id"]
                     )
-                    eventos.enviar_cancelamento(db, cancelado)
-                st.success("Agendamento cancelado.")
-                st.rerun()
-            except reservas.CancelamentoInvalido:
-                st.warning("Este agendamento nao esta mais ativo.")
+                    ok = True
+                except reservas.CancelamentoInvalido:
+                    st.warning("Este agendamento nao esta mais ativo.")
+                except reservas.NaoAutorizado:
+                    st.error("Voce nao pode cancelar este agendamento.")
+                except Exception:  # noqa: BLE001 - nunca deixar o botao travado
+                    st.error("Nao conseguimos cancelar agora. Tente novamente em instantes.")
+                finally:
+                    acao_unica.liberar(nome_acao)
+                if ok:
+                    st.toast("Agendamento cancelado.")
+                    st.rerun()
         with col2.expander("Reagendar"):
             _bloco_reagendar(usuario, ag)
     elif ag.status == STATUS_CONCLUIDO:

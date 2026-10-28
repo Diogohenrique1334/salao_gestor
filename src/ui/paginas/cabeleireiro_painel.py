@@ -7,7 +7,7 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import streamlit as st
@@ -21,6 +21,40 @@ from src.ui.componentes import (atendimento_ui, bloqueio_ui, graficos, guards,
                                   ocupacao_ui, styles)
 
 _PERIODOS = {"7 dias": 7, "30 dias": 30, "90 dias": 90}
+_KEY_OCUP = "cab_ocup"
+_CHAVE_ABRIU_HOJE = "cab_painel_abriu_hoje"
+
+
+def _abrir_hoje_na_primeira_visita() -> None:
+    """Na primeira carga do painel na sessao, ja deixa a agenda de HOJE aberta.
+
+    O barbeiro abre o app para ver quem vem hoje; antes caia na grade da
+    semana e precisava de um toque a mais.
+
+    A flag propria e' necessaria: se a regra fosse so "sem dia escolhido ->
+    hoje", o botao 'Fechar agenda do dia' (que limpa a escolha) reabriria a
+    agenda no run seguinte, e o botao nunca fecharia nada.
+    """
+    if st.session_state.get(_CHAVE_ABRIU_HOJE):
+        return
+    st.session_state[_CHAVE_ABRIU_HOJE] = True
+    st.session_state.setdefault(f"{_KEY_OCUP}_sel", date.today())
+
+
+def _secao_agenda_do_dia(cab_id: int, prof, dia) -> None:
+    """Agenda marcada + horarios vagos do dia escolhido."""
+    e_hoje = dia == date.today()
+    styles.titulo_secao("Agenda de hoje" if e_hoje
+                        else f"Agenda de {styles.formatar_data_br(dia)}")
+    if e_hoje:
+        st.caption(styles.formatar_data_br(dia))
+
+    atendimento_ui.tabela_agenda_do_dia(cabeleireiro_fixo=prof, dia=dia, key_prefix="cab_ag")
+    st.markdown("**Horarios vagos**")
+    atendimento_ui.lista_blocos_livres(cab_id, dia)
+    if st.button("Fechar agenda do dia", key="cab_fechar"):
+        ocupacao_ui.limpar_selecao(_KEY_OCUP)
+        st.rerun()
 
 
 def render() -> None:
@@ -34,6 +68,14 @@ def render() -> None:
         return
 
     st.markdown(f"## 💈 Painel - {prof.nome}")
+
+    # A AGENDA DO DIA VEM PRIMEIRO. Os KPIs sao consulta ocasional; o que o
+    # barbeiro abre o app para ver e' quem chega hoje.
+    _abrir_hoje_na_primeira_visita()
+    dia_sel = st.session_state.get(f"{_KEY_OCUP}_sel")
+    if dia_sel is not None:
+        _secao_agenda_do_dia(cab_id, prof, dia_sel)
+        st.divider()
 
     escolha = st.segmented_control("Periodo", list(_PERIODOS.keys()), default="30 dias")
     dias = _PERIODOS.get(escolha, 30)
@@ -71,23 +113,13 @@ def render() -> None:
         df = pd.DataFrame(por_dia, columns=["dia", "qtd"])
         graficos.linha(df, "dia", "qtd", key="cab_por_dia")
 
-    styles.titulo_secao("Minha agenda")
-    dias_grade, inicio_grade = ocupacao_ui.controles_periodo("cab_ocup", default_dias=7)
-    dia_sel = ocupacao_ui.grade_ocupacao(
-        cabeleireiro_id=cab_id, dias=dias_grade, inicio=inicio_grade, key_prefix="cab_ocup"
+    # A grade da semana desce para ca: serve para NAVEGAR ate outro dia, e o
+    # dia escolhido abre la em cima (o grade_ocupacao da rerun ao escolher).
+    styles.titulo_secao("Proximos dias")
+    dias_grade, inicio_grade = ocupacao_ui.controles_periodo(_KEY_OCUP, default_dias=7)
+    ocupacao_ui.grade_ocupacao(
+        cabeleireiro_id=cab_id, dias=dias_grade, inicio=inicio_grade, key_prefix=_KEY_OCUP
     )
-
-    if dia_sel is not None:
-        st.divider()
-        styles.titulo_secao(f"Agenda de {styles.formatar_data_br(dia_sel)}")
-        atendimento_ui.tabela_agenda_do_dia(
-            cabeleireiro_fixo=prof, dia=dia_sel, key_prefix="cab_ag"
-        )
-        st.markdown("**Horarios vagos**")
-        atendimento_ui.lista_blocos_livres(cab_id, dia_sel)
-        if st.button("Fechar agenda do dia", key="cab_fechar"):
-            ocupacao_ui.limpar_selecao("cab_ocup")
-            st.rerun()
 
     styles.titulo_secao("Bloquear minha agenda")
     st.caption("Bloqueie dias de ferias/folga: eles somem dos horarios oferecidos aos clientes.")
