@@ -30,7 +30,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from src.constantes import PAPEL_CLIENTE, STATUS_CONFIRMADO
+from src.constantes import DIAS_SEMANA_PADRAO, PAPEL_CLIENTE, STATUS_CONFIRMADO
 from src.db.base import Base
 
 
@@ -70,8 +70,14 @@ class Cabeleireiro(Base):
     # Almoco RECORRENTE (hora local): vale para TODO dia de trabalho, sem
     # precisar bloquear dia a dia. Entra como intervalo "ocupado" no calculo de
     # slots (ver servicos/agenda.py). None/None = sem almoco definido.
+    # LEGADO (migration 0009): o almoco passou a viver em horario_trabalho, uma
+    # linha por dia da semana, porque no sabado ele e' mais curto. Estas colunas
+    # ficam por compatibilidade de deploy e NAO sao mais lidas pelo codigo.
     almoco_inicio = Column(Time, nullable=True)
     almoco_fim = Column(Time, nullable=True)
+    # Nome do ARQUIVO em assets/profissionais/ (ex.: "marcos.jpg"), nao os bytes.
+    # None = sem foto; a UI cai no circulo com as iniciais.
+    foto = Column(String(120), nullable=True)
     criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     servicos = relationship(
@@ -96,6 +102,13 @@ class Servico(Base):
     duracao_min = Column(Integer, nullable=False, default=30)
     preco_base = Column(Numeric(10, 2), nullable=False, default=0)
     ativo = Column(Boolean, nullable=False, default=True)
+    # Posicao na lista que o cliente ve (menor aparece antes); desempate por nome.
+    # Editavel pelo gestor - antes era alfabetico, o que punha "Alisante" na
+    # frente de "Corte", o servico mais pedido da casa.
+    ordem = Column(Integer, nullable=False, default=100)
+    # Dias em que o servico pode ser MARCADO, indices de datetime.weekday()
+    # separados por virgula ("0,1,2,3,4" = util). Ver servicos/agenda.py.
+    dias_semana = Column(String(20), nullable=False, default=DIAS_SEMANA_PADRAO)
 
     cabeleireiros = relationship(
         "CabeleireiroServico", back_populates="servico", cascade="all, delete-orphan"
@@ -135,6 +148,10 @@ class HorarioTrabalho(Base):
     dia_semana = Column(Integer, nullable=False)  # 0=segunda ... 6=domingo (datetime.weekday())
     hora_inicio = Column(Time, nullable=False)
     hora_fim = Column(Time, nullable=False)
+    # Almoco DESTE dia. Fica aqui, e nao no cabeleireiro, porque varia por dia
+    # (no sabado o salao para meia hora). None/None = sem almoco neste dia.
+    almoco_inicio = Column(Time, nullable=True)
+    almoco_fim = Column(Time, nullable=True)
 
     cabeleireiro = relationship("Cabeleireiro", back_populates="horarios")
 

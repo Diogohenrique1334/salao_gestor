@@ -13,6 +13,7 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
+import base64
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -41,6 +42,72 @@ COR_TEXTO_FRACO = "#9a9aa2"
 # raiz do projeto -> assets/ (funciona sob `streamlit run` e em CLI)
 _RAIZ = Path(__file__).resolve().parents[3]
 CAMINHO_LOGO = _RAIZ / "assets" / "logo.png"
+PASTA_FOTOS = _RAIZ / "assets" / "profissionais"
+
+
+def caminho_foto(nome_arquivo) -> Optional[Path]:
+    """Caminho da foto do profissional, ou None se nao houver arquivo.
+
+    `cabeleireiro.foto` guarda so o NOME do arquivo; a imagem vive no repo e
+    entra na imagem Docker. Sem foto (ou arquivo faltando), a UI cai no circulo
+    com as iniciais.
+    """
+    if not nome_arquivo:
+        return None
+    caminho = PASTA_FOTOS / str(nome_arquivo)
+    return caminho if caminho.exists() else None
+
+
+def fotos_disponiveis() -> list:
+    """Arquivos de foto presentes em assets/profissionais/ (nomes, ordenados).
+
+    A foto e' um arquivo do repositorio, entao o gestor ESCOLHE entre os que
+    existem - nao faz upload. Trocar a foto de alguem e' commit + deploy, o que
+    para uma equipe de tres pessoas acontece quando alguem entra ou sai.
+    """
+    if not PASTA_FOTOS.is_dir():
+        return []
+    return sorted(
+        f.name for f in PASTA_FOTOS.iterdir()
+        if f.is_file() and f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")
+    )
+
+
+def iniciais(nome: str) -> str:
+    """Iniciais p/ o avatar sem foto: "Marcos Alexandre" -> "MA"."""
+    partes = [p for p in str(nome or "").split() if p]
+    if not partes:
+        return "?"
+    if len(partes) == 1:
+        return partes[0][:2].upper()
+    return (partes[0][0] + partes[-1][0]).upper()
+
+
+@st.cache_data(show_spinner=False)
+def _foto_em_base64(caminho: str) -> str:
+    """Bytes da foto em base64. Cacheado: a imagem e' embutida no HTML a cada
+    rerun, e reler/recodificar o arquivo toda vez seria desperdicio."""
+    return base64.b64encode(Path(caminho).read_bytes()).decode("ascii")
+
+
+def avatar_foto(caminho, tamanho: int = 56) -> str:
+    """HTML da foto em circulo. Embutida porque o Streamlit nao arredonda
+    st.image, e um <img> com border-radius resolve sem CSS global."""
+    return (
+        f'<img src="data:image/jpeg;base64,{_foto_em_base64(str(caminho))}" alt="" '
+        f'style="width:{tamanho}px;height:{tamanho}px;border-radius:50%;'
+        f'object-fit:cover;display:block">'
+    )
+
+
+def avatar_iniciais(nome: str, tamanho: int = 56) -> str:
+    """HTML do circulo amarelo com as iniciais (texto ESCURO sobre o amarelo)."""
+    return (
+        f'<div style="width:{tamanho}px;height:{tamanho}px;border-radius:50%;'
+        f'background:{COR_DESTAQUE};color:{COR_SOBRE_DESTAQUE};display:flex;'
+        f'align-items:center;justify-content:center;font-weight:800;'
+        f'font-size:{int(tamanho * 0.34)}px">{iniciais(nome)}</div>'
+    )
 
 _CSS = f"""
 <style>

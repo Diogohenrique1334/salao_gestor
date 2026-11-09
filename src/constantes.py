@@ -50,6 +50,12 @@ CANAL_WHATSAPP = "whatsapp"
 CANAL_SMS = "sms"          # ainda sem implementacao (ver notificacoes/politica.py)
 CANAL_CONSOLE = "console"
 
+# Dias da semana - indices de datetime.weekday() (0=segunda ... 6=domingo).
+# `servico.dias_semana` guarda um subconjunto destes, separado por virgula.
+NOMES_DIAS_SEMANA = ("Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo")
+DIAS_SEMANA_PADRAO = "0,1,2,3,4,5,6"   # servico novo nasce liberado em todos
+
+
 # Eventos de notificacao — chave da POLITICA de canais (notificacoes/politica.py).
 # Existem para que "quem recebe o que, por qual canal" seja uma decisao unica e
 # declarativa, em vez de "manda por todo canal configurado" (o que faria um

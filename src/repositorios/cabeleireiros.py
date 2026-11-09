@@ -43,6 +43,7 @@ def atualizar(
     telefone: Optional[str] = None,
     bio: Optional[str] = None,
     ativo: Optional[bool] = None,
+    foto: Optional[str] = None,
 ) -> Optional[Cabeleireiro]:
     prof = db.get(Cabeleireiro, cabeleireiro_id)
     if not prof:
@@ -55,22 +56,29 @@ def atualizar(
         prof.bio = bio.strip() or None
     if ativo is not None:
         prof.ativo = ativo
+    if foto is not None:
+        # "" limpa a foto; o padrao "None = nao mexe" dos updates genericos
+        # sozinho nao daria p/ remover
+        prof.foto = foto.strip() or None
     db.flush()
     return prof
 
 
-def definir_almoco(
-    db: Session, cabeleireiro_id: int, *, inicio: Optional[time], fim: Optional[time]
+def definir_almoco_do_dia(
+    db: Session, horario_id: int, *, inicio: Optional[time], fim: Optional[time]
 ) -> None:
-    """Define (ou limpa) o almoco recorrente. Passe inicio=fim=None p/ remover.
+    """Define (ou limpa) o almoco de UM dia de trabalho. None/None remove.
 
-    Funcao dedicada porque None e' um valor VALIDO (sem almoco) — o `atualizar`
-    generico usa o padrao "None = nao mexe", que aqui nao daria p/ limpar.
+    O almoco vive na linha do dia (horario_trabalho) e nao no profissional,
+    porque varia: no sabado o salao para meia hora.
+
+    Funcao dedicada porque None e' um valor VALIDO (sem almoco) — o padrao
+    "None = nao mexe" dos updates genericos nao daria p/ limpar.
     """
-    prof = db.get(Cabeleireiro, cabeleireiro_id)
-    if prof:
-        prof.almoco_inicio = inicio
-        prof.almoco_fim = fim
+    h = db.get(HorarioTrabalho, horario_id)
+    if h:
+        h.almoco_inicio = inicio
+        h.almoco_fim = fim
         db.flush()
 
 
@@ -102,13 +110,16 @@ def listar_horarios(db: Session, cabeleireiro_id: int) -> List[HorarioTrabalho]:
 
 
 def adicionar_horario(
-    db: Session, cabeleireiro_id: int, *, dia_semana: int, hora_inicio: time, hora_fim: time
+    db: Session, cabeleireiro_id: int, *, dia_semana: int, hora_inicio: time, hora_fim: time,
+    almoco_inicio: Optional[time] = None, almoco_fim: Optional[time] = None,
 ) -> HorarioTrabalho:
     h = HorarioTrabalho(
         cabeleireiro_id=cabeleireiro_id,
         dia_semana=dia_semana,
         hora_inicio=hora_inicio,
         hora_fim=hora_fim,
+        almoco_inicio=almoco_inicio,
+        almoco_fim=almoco_fim,
     )
     db.add(h)
     db.flush()

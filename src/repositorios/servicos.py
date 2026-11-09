@@ -10,12 +10,15 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.constantes import DIAS_SEMANA_PADRAO
 from src.db.models import CabeleireiroServico, Servico
 
 
 # ----- Servico -------------------------------------------------------------
 def listar(db: Session, incluir_inativos: bool = False) -> List[Servico]:
-    stmt = select(Servico).order_by(Servico.nome)
+    # ORDEM definida pelo gestor (menor primeiro), nome so desempata. Era
+    # alfabetico, o que punha "Alisante" na frente de "Corte".
+    stmt = select(Servico).order_by(Servico.ordem, Servico.nome)
     if not incluir_inativos:
         stmt = stmt.where(Servico.ativo.is_(True))
     return list(db.execute(stmt).scalars().all())
@@ -25,8 +28,10 @@ def buscar_por_id(db: Session, servico_id: int) -> Optional[Servico]:
     return db.get(Servico, servico_id)
 
 
-def criar(db: Session, *, nome: str, duracao_min: int, preco_base: Decimal) -> Servico:
-    s = Servico(nome=nome.strip(), duracao_min=int(duracao_min), preco_base=preco_base, ativo=True)
+def criar(db: Session, *, nome: str, duracao_min: int, preco_base: Decimal,
+          ordem: int = 100, dias_semana: str = DIAS_SEMANA_PADRAO) -> Servico:
+    s = Servico(nome=nome.strip(), duracao_min=int(duracao_min), preco_base=preco_base,
+                ativo=True, ordem=int(ordem), dias_semana=dias_semana)
     db.add(s)
     db.flush()
     return s
@@ -40,6 +45,8 @@ def atualizar(
     duracao_min: Optional[int] = None,
     preco_base: Optional[Decimal] = None,
     ativo: Optional[bool] = None,
+    ordem: Optional[int] = None,
+    dias_semana: Optional[str] = None,
 ) -> Optional[Servico]:
     s = db.get(Servico, servico_id)
     if not s:
@@ -52,6 +59,10 @@ def atualizar(
         s.preco_base = preco_base
     if ativo is not None:
         s.ativo = ativo
+    if ordem is not None:
+        s.ordem = int(ordem)
+    if dias_semana is not None:
+        s.dias_semana = dias_semana
     db.flush()
     return s
 
@@ -72,6 +83,20 @@ def buscar_vinculo(db: Session, cabeleireiro_id: int, servico_id: int) -> Option
             CabeleireiroServico.servico_id == servico_id,
         )
     ).scalar_one_or_none()
+
+
+def listar_vinculos_do_servico(
+    db: Session, servico_id: int, apenas_ativos: bool = True
+) -> List[CabeleireiroServico]:
+    """Vinculos de UM servico - quem oferece. Sentido inverso do de baixo.
+
+    Necessario desde que o fluxo do cliente passou a comecar pelo SERVICO: a
+    lista de profissionais sai daqui.
+    """
+    stmt = select(CabeleireiroServico).where(CabeleireiroServico.servico_id == servico_id)
+    if apenas_ativos:
+        stmt = stmt.where(CabeleireiroServico.ativo.is_(True))
+    return list(db.execute(stmt).scalars().all())
 
 
 def listar_vinculos_do_cabeleireiro(

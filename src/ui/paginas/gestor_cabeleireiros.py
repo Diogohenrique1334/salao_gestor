@@ -15,7 +15,7 @@ from decimal import Decimal
 
 import streamlit as st
 
-from src.constantes import DESCONTO_PERCENTUAL, DESCONTO_VALOR
+from src.constantes import DESCONTO_PERCENTUAL, DESCONTO_VALOR, NOMES_DIAS_SEMANA
 from src.db.engine import sessao
 from src.repositorios import cabeleireiros as repo_cab
 from src.repositorios import clientes as repo_cli
@@ -25,7 +25,7 @@ from src.ui.componentes import bloqueio_ui, guards, styles
 
 _MIN_SENHA = 6
 
-_DIAS = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"]
+_DIAS = list(NOMES_DIAS_SEMANA)
 _OPC_DESCONTO = {"Sem desconto": None, "Percentual (%)": DESCONTO_PERCENTUAL, "Valor (R$)": DESCONTO_VALOR}
 _LABEL_POR_TIPO = {None: "Sem desconto", DESCONTO_PERCENTUAL: "Percentual (%)", DESCONTO_VALOR: "Valor (R$)"}
 
@@ -53,13 +53,31 @@ def _editar_dados(prof) -> None:
         nome = c1.text_input("Nome", value=prof.nome, key=f"cn_{prof.id}")
         telefone = c2.text_input("WhatsApp", value=prof.telefone or "", key=f"ct_{prof.id}")
         bio = st.text_area("Bio", value=prof.bio or "", key=f"cb_{prof.id}", height=70)
+
+        # Foto: escolha entre os arquivos de assets/profissionais/ (o arquivo
+        # vive no repo; aqui so se diz QUAL e' o de cada um).
+        disponiveis = ["(sem foto)"] + styles.fotos_disponiveis()
+        atual = prof.foto if prof.foto in disponiveis else "(sem foto)"
+        cf1, cf2 = st.columns([3, 1], vertical_alignment="center")
+        foto_sel = cf1.selectbox("Foto", disponiveis, index=disponiveis.index(atual),
+                                 key=f"cf_{prof.id}",
+                                 help="Arquivos de assets/profissionais/. "
+                                      "Prepare novos com scripts/preparar_fotos.py.")
+        caminho_atual = styles.caminho_foto(prof.foto)
+        with cf2:
+            if caminho_atual is not None:
+                st.markdown(styles.avatar_foto(caminho_atual, 56), unsafe_allow_html=True)
+            else:
+                st.markdown(styles.avatar_iniciais(prof.nome, 56), unsafe_allow_html=True)
+
         ativo = st.checkbox("Ativo", value=bool(prof.ativo), key=f"ca_{prof.id}")
         col1, col2 = st.columns(2)
         salvar = col1.form_submit_button("Salvar dados", type="primary")
         remover = col2.form_submit_button("Remover (desativar)")
     if salvar:
         with sessao() as db:
-            repo_cab.atualizar(db, prof.id, nome=nome, telefone=telefone, bio=bio, ativo=ativo)
+            repo_cab.atualizar(db, prof.id, nome=nome, telefone=telefone, bio=bio, ativo=ativo,
+                               foto=("" if foto_sel == "(sem foto)" else foto_sel))
         st.success("Dados atualizados.")
         st.rerun()
     if remover:
@@ -70,23 +88,27 @@ def _editar_dados(prof) -> None:
 
 
 def _gerir_horarios(prof) -> None:
+    """Dias de trabalho do profissional - cada dia com o SEU almoco.
+
+    O almoco deixou de ser um valor unico do profissional (migration 0009):
+    no sabado o salao para meia hora, e antes nao havia como dizer isso.
+    """
     st.markdown("**Horarios de trabalho**")
+    st.caption("Cada dia tem o proprio almoco. A agenda bloqueia esse intervalo so naquele dia.")
+
     with sessao() as db:
         horarios = repo_cab.listar_horarios(db, prof.id)
-    if horarios:
-        for h in horarios:
-            col1, col2 = st.columns([4, 1])
-            col1.write(f"{_DIAS[h.dia_semana]}: {h.hora_inicio.strftime('%H:%M')} – {h.hora_fim.strftime('%H:%M')}")
-            if col2.button("Remover", key=f"rmh_{h.id}"):
-                with sessao() as db:
-                    repo_cab.remover_horario(db, h.id)
-                st.rerun()
-    else:
-        st.caption("Sem horarios definidos (cliente nao vera slots).")
 
+    if not horarios:
+        st.caption("Sem horarios definidos (cliente nao vera slots).")
+    for h in horarios:
+        _linha_horario(prof, h)
+
+    st.markdown("_Adicionar dia_")
     with st.form(f"add_horario_{prof.id}", clear_on_submit=True):
         c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-        dia = c1.selectbox("Dia", options=list(range(7)), format_func=lambda i: _DIAS[i], key=f"hd_{prof.id}")
+        dia = c1.selectbox("Dia", options=list(range(7)),
+                           format_func=lambda i: _DIAS[i], key=f"hd_{prof.id}")
         ini = c2.time_input("Inicio", value=time(9, 0), key=f"hi_{prof.id}")
         fim = c3.time_input("Fim", value=time(18, 0), key=f"hf_{prof.id}")
         c4.markdown("&nbsp;")
@@ -95,46 +117,59 @@ def _gerir_horarios(prof) -> None:
                 st.error("Inicio deve ser antes do fim.")
             else:
                 with sessao() as db:
-                    repo_cab.adicionar_horario(db, prof.id, dia_semana=int(dia), hora_inicio=ini, hora_fim=fim)
+                    repo_cab.adicionar_horario(db, prof.id, dia_semana=int(dia),
+                                               hora_inicio=ini, hora_fim=fim)
                 st.rerun()
 
-    _gerir_almoco(prof)
 
-
-def _gerir_almoco(prof) -> None:
-    """Almoco recorrente: um intervalo que vale TODO dia de trabalho (nao dia a dia)."""
-    st.markdown("**Horario de almoco**")
-    tem = bool(prof.almoco_inicio and prof.almoco_fim)
-    if tem:
-        st.caption(f"Almoco atual: {prof.almoco_inicio.strftime('%H:%M')} – "
-                   f"{prof.almoco_fim.strftime('%H:%M')} (todos os dias). A agenda ja bloqueia esse horario.")
+def _linha_horario(prof, h) -> None:
+    """Um dia de trabalho: jornada, almoco daquele dia e remocao."""
+    tem_almoco = bool(h.almoco_inicio and h.almoco_fim)
+    if tem_almoco:
+        resumo = (f"almoco {h.almoco_inicio.strftime('%H:%M')}–"
+                  f"{h.almoco_fim.strftime('%H:%M')}")
     else:
-        st.caption("Sem almoco definido. Ao definir, a agenda trava esse horario em todos os dias.")
+        resumo = "sem almoco"
 
-    with st.form(f"almoco_{prof.id}"):
-        c1, c2, c3 = st.columns([1, 1, 1.4])
-        ini = c1.time_input("Inicio", value=prof.almoco_inicio or time(12, 0), key=f"ai_{prof.id}")
-        fim = c2.time_input("Fim", value=prof.almoco_fim or time(13, 0), key=f"af_{prof.id}")
-        c3.markdown("&nbsp;")
-        salvar = c3.form_submit_button("Salvar almoco", type="primary")
-        # SEMPRE renderiza o botao (so desabilita quando nao ha almoco). Cria-lo
-        # condicionalmente mudava a FORMA da arvore de widgets entre um rerun e
-        # outro, e o front do Streamlit quebrava com
-        # "NotFoundError: Failed to execute 'removeChild' on 'Node'".
-        remover = c3.form_submit_button("Sem almoco", disabled=not tem)
-    if salvar:
-        if ini >= fim:
-            st.error("Inicio deve ser antes do fim.")
-        else:
+    with st.expander(f"{_DIAS[h.dia_semana]}: "
+                     f"{h.hora_inicio.strftime('%H:%M')}–{h.hora_fim.strftime('%H:%M')}  ·  {resumo}"):
+        with st.form(f"almoco_dia_{h.id}"):
+            c1, c2, c3 = st.columns([1, 1, 1.4])
+            ini = c1.time_input("Almoco - inicio", value=h.almoco_inicio or time(12, 0),
+                                key=f"adi_{h.id}")
+            fim = c2.time_input("Almoco - fim", value=h.almoco_fim or time(13, 0),
+                                key=f"adf_{h.id}")
+            c3.markdown("&nbsp;")
+            salvar = c3.form_submit_button("Salvar almoco", type="primary")
+            # SEMPRE renderiza o botao (so desabilita quando nao ha almoco):
+            # cria-lo condicionalmente muda a FORMA da arvore de widgets entre
+            # um rerun e outro, e o front do Streamlit quebra com
+            # "NotFoundError: Failed to execute 'removeChild' on 'Node'".
+            remover_almoco = c3.form_submit_button("Sem almoco", disabled=not tem_almoco)
+
+        if salvar:
+            if ini >= fim:
+                st.error("Inicio do almoco deve ser antes do fim.")
+            elif ini < h.hora_inicio or fim > h.hora_fim:
+                # almoco fora do expediente nao bloqueia nada e so confunde
+                st.error(f"O almoco precisa ficar dentro do expediente "
+                         f"({h.hora_inicio.strftime('%H:%M')}–{h.hora_fim.strftime('%H:%M')}).")
+            else:
+                with sessao() as db:
+                    repo_cab.definir_almoco_do_dia(db, h.id, inicio=ini, fim=fim)
+                st.success("Almoco do dia salvo.")
+                st.rerun()
+
+        if remover_almoco:
             with sessao() as db:
-                repo_cab.definir_almoco(db, prof.id, inicio=ini, fim=fim)
-            st.success("Horario de almoco salvo.")
+                repo_cab.definir_almoco_do_dia(db, h.id, inicio=None, fim=None)
+            st.success("Almoco removido deste dia.")
             st.rerun()
-    if remover:
-        with sessao() as db:
-            repo_cab.definir_almoco(db, prof.id, inicio=None, fim=None)
-        st.success("Almoco removido.")
-        st.rerun()
+
+        if st.button("Remover este dia", key=f"rmh_{h.id}"):
+            with sessao() as db:
+                repo_cab.remover_horario(db, h.id)
+            st.rerun()
 
 
 def _gerir_bloqueios(prof) -> None:
